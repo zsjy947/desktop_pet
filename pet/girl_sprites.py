@@ -49,7 +49,7 @@ def draw_frame(cv, *, char, state, t, facing, bubble_text, particles):
 
     draw_particles(cv, particles)
     if bubble_text:
-        draw_bubble(cv, bubble_text)
+        draw_bubble(cv, bubble_text, C.WINDOW_SIZE)
 
 
 # ---------- 分层部件 ----------

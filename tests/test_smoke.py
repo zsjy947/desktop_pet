@@ -204,6 +204,38 @@ class SmokeTest(unittest.TestCase):
         _, y2 = pet_window.menu_origin(500, 10, size, m, n_items, n_seps)
         self.assertGreaterEqual(y2, m.y + 2)
 
+    def test_photo_sprite_switch_and_render(self):
+        """图片精灵角色：切换后窗口变大、播帧渲染正常，切回后恢复。"""
+        from pet import photo_sprites
+        app = self.app
+        if not photo_sprites.has_assets('nino'):
+            self.skipTest('assets 未构建（先运行 tools/build_sprites.py）')
+
+        self.assertEqual(photo_sprites.window_size('nino'), 240)
+        app._char_var.set('nino')
+        app._switch_character()
+        self.pump(4)
+        self.assertEqual(app.size, 240)
+        self.assertTrue(app._use_photo(app.char))
+        self.assertTrue(app.bubble_text)
+        self.assertIn(app.bubble_text, app.char['phrases']['switch'])
+        app.behavior.wake()          # 深夜启动会自动打盹，先叫醒再验证
+        self.pump(2)
+        self.assertEqual(app.behavior.state, 'idle')
+
+        # 图片精灵各状态都能渲染
+        from pet import girl_sprites  # noqa: F401  确保回落路径可导入
+        for state in ('walk', 'sleep', 'happy', 'drag', 'fall'):
+            photo_sprites.draw_frame(
+                app.cv, char=app.char, state=state, t=0.4, facing=-1,
+                bubble_text='测试', particles=[])
+        self.pump(2)
+
+        app._char_var.set('cat')
+        app._switch_character()
+        self.pump(3)
+        self.assertEqual(app.size, 160)
+
     def test_behavior_pause_stops_walk(self):
         """右键菜单打开时走路应先站定（真实弹窗交互由人工验证）。"""
         app = self.app

@@ -15,6 +15,7 @@ import tkinter as tk
 
 from . import config as C
 from . import girl_sprites
+from . import photo_sprites
 from . import screens
 from . import sprites
 from .behavior import Behavior
@@ -87,7 +88,13 @@ def menu_origin(pet_x, pet_y, size, monitor, n_items, n_seps):
 class PetApp:
     def __init__(self):
         self.root = tk.Tk()
-        self.size = C.WINDOW_SIZE
+
+        # 当前角色：从用户目录的偏好文件恢复；图片精灵角色窗口更大
+        self.char_id = load_pref() or 'cat'
+        self.char = get_character(self.char_id)
+        self._char_var = tk.StringVar(value=self.char_id)
+        self.root.title(f'桌面宠物 · {self.char["name"]}')
+        self.size = self._size_for(self.char)
         size = self.size
 
         # 多显示器：虚拟桌面边界 + 每块屏各自的“地面”
@@ -121,12 +128,6 @@ class PetApp:
                             cursor='hand2')
         self.cv.pack()
 
-        # 当前角色：从用户目录的偏好文件恢复
-        self.char_id = load_pref() or 'cat'
-        self.char = get_character(self.char_id)
-        self._char_var = tk.StringVar(value=self.char_id)
-        self.root.title(f'桌面宠物 · {self.char["name"]}')
-
         self.behavior = Behavior()
         self.particles = []          # 爱心 / Zzz 粒子
         self.vy = 0.0                # 下落速度
@@ -150,6 +151,17 @@ class PetApp:
         self._schedule_tick()
 
     # ---------------- 位置与屏幕 ----------------
+    def _size_for(self, char):
+        """角色的窗口边长：图片精灵角色用构建时的更大窗口。"""
+        if (char.get('kind') == 'girl' and char.get('photo')
+                and photo_sprites.has_assets(char['photo'])):
+            return photo_sprites.window_size(char['photo'])
+        return C.WINDOW_SIZE
+
+    def _use_photo(self, char):
+        return (char.get('kind') == 'girl' and bool(char.get('photo'))
+                and photo_sprites.has_assets(char['photo']))
+
     def _init_position(self):
         """出生在主屏右下角（任务栏上方）。"""
         p = screens.primary(self.monitors)
@@ -283,6 +295,17 @@ class PetApp:
         self.char = CHARACTERS[new_id]
         save_pref(new_id)
         self.root.title(f'桌面宠物 · {self.char["name"]}')
+
+        # 图片精灵角色窗口更大：窗口底边（脚底）保持不动
+        new_size = self._size_for(self.char)
+        if new_size != self.size:
+            self.y = self.y + self.size - new_size
+            self.size = new_size
+            self.max_x = self.virtual.x + self.virtual.w - self.size
+            self.x = min(max(self.x, self.min_x), self.max_x)
+            self._clamp_to_virtual()
+            self.cv.config(width=self.size, height=self.size)
+        self.root.geometry(f'{self.size}x{self.size}+{int(self.x)}+{int(self.y)}')
         self._say(random.choice(self._p('switch')))
 
     # ---------------- 菜单动作 ----------------
@@ -317,11 +340,12 @@ class PetApp:
         self.talk_until = time.monotonic() + C.SAY_DURATION
 
     def _spawn_hearts(self, n):
+        k = self.size / 160
         for _ in range(n):
             self.particles.append({
                 'kind': 'heart',
-                'x': self.size / 2 + random.uniform(-30, 30),
-                'y': 70 + random.uniform(-15, 15),
+                'x': self.size / 2 + random.uniform(-30 * k, 30 * k),
+                'y': 70 * k + random.uniform(-15 * k, 15 * k),
                 'vx': random.uniform(-8, 8),
                 'vy': random.uniform(-55, -35),
                 'age': 0.0,
@@ -330,10 +354,11 @@ class PetApp:
             })
 
     def _spawn_zzz(self):
+        k = self.size / 160
         self.particles.append({
             'kind': 'zzz',
-            'x': 108 + random.uniform(-6, 6),
-            'y': 60,
+            'x': 108 * k + random.uniform(-6 * k, 6 * k),
+            'y': 60 * k,
             'vx': random.uniform(2, 8),
             'vy': -22.0,
             'age': 0.0,
@@ -409,6 +434,11 @@ class PetApp:
             sprites.draw_frame(self.cv, state=b.state, t=t, facing=b.facing,
                                bubble_text=self.bubble_text,
                                particles=self.particles)
+        elif self._use_photo(self.char):
+            photo_sprites.draw_frame(self.cv, char=self.char, state=b.state,
+                                     t=t, facing=b.facing,
+                                     bubble_text=self.bubble_text,
+                                     particles=self.particles)
         else:
             girl_sprites.draw_frame(self.cv, char=self.char, state=b.state,
                                     t=t, facing=b.facing,

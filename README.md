@@ -2,8 +2,9 @@
 
 一个用 **Python 标准库（tkinter）** 实现的桌面宠物，零第三方依赖。
 一只程序化画出来的橘猫在你的屏幕底边散步、打盹、卖萌；
-还可以在右键菜单里切换成 12 位由 `reference/pictures` 参考图
-转化而来的 Q 版少女，每个角色都有自己的一套台词。
+还可以在右键菜单里切换成 12 位由 `reference/pictures` 参考图转化来的角色——
+有构建产物时显示**高清抠图精灵**（240px 大窗口），没有时自动回落到
+参数化绘制的 Q 版画风。每个角色都有自己的一套台词。
 
 ![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
 
@@ -42,9 +43,28 @@ python main.py
 | 🧚 中野二乃、莉莉艾、小光、由比滨结衣、竹兰、露莎米奈 | `reference/pictures` 动漫角色参考图 |
 | 🧚 关晓彤、戚薇、毛晓彤、王玉雯、赵今麦、陈都灵 | `reference/pictures` 参考照片 |
 
-少女们按参考图特征参数化绘制：发色发型（双马尾 / 马尾 / 侧发髻 / 侧编发……）、
-瞳色、服装（连衣裙 / 衬衫裙 / 和服 / 大衣 / 芭蕾纱裙……）、腿袜、
-头饰（蝴蝶结 / 宽檐帽 / 毛线帽 / 花环 / 头纱……）、眼镜、围巾、领带、珍珠项链等。
+## 高清图片精灵（构建期工具）
+
+`assets/` 里的精灵帧由 `tools/build_sprites.py` 从参考图离线生成
+（运行时零依赖，只加载 PNG）：
+
+```bash
+pip install pillow "rembg[cpu]"     # 仅构建期需要；模型走 GitHub 下载
+python tools/build_sprites.py       # 抠图 → 去黑晕 → 缩放 → 生成帧
+python tools/build_sprites.py --only nino --sheet   # 只建一个 + 拼图预览
+```
+
+管线要点：
+
+- **抠图**：rembg 本地 AI 抠图（动漫插画用 `isnet-anime`，真人照片用 `u2net`），
+  图片不外传；自动丢弃与人物不相连的背景杂物（台灯、羽毛等小岛）
+- **边缘清理**：收缩 1px 过渡带 + alpha 二值化 + 边缘像素用身体内部颜色渗色，
+  避免键色透明窗口的暗边/背景色晕
+- **伪姿势**：每张参考图只有一个姿势，各状态帧由仿射变换伪造——
+  呼吸（纵向微缩放）、走路（左右倾斜 + 上下颠）、睡觉（压扁成蹲姿）、
+  被拎/下落（纵向拉伸）；走路摆腿、坐下、躺睡等**真·新姿势**需要
+  生成式 AI（Stable Diffusion + ControlNet）或 Live2D 绑定，不在本工具范围
+- 产物：`assets/<id>/manifest.json` + 各状态帧 PNG（含朝右/朝左两套）
 
 ## 项目结构
 
@@ -57,10 +77,14 @@ desktop_pet/
 │   ├── characters.py   # 角色库：外观预设 + 每个角色的台词包
 │   ├── drawutil.py     # 共享绘制工具：镜像助手 / 气泡 / 粒子
 │   ├── sprites.py      # 橘猫逐帧绘制（Canvas 图元程序化画出）
-│   ├── girl_sprites.py # Q 版少女参数化逐帧绘制
+│   ├── girl_sprites.py # Q 版少女参数化逐帧绘制（无构建产物时回落）
+│   ├── photo_sprites.py# 高清图片精灵播放器（加载 assets/ 预生成帧）
 │   ├── behavior.py     # 行为状态机：idle/walk/sleep/drag/fall/happy
 │   ├── screens.py      # 多显示器枚举与虚拟桌面边界
 │   └── pet_window.py   # 无边框透明置顶窗、右键菜单、角色切换、主循环
+├── tools/
+│   └── build_sprites.py# 离线构建：参考图 → 抠图 → 精灵帧（需 pillow+rembg）
+├── assets/             # 构建产物：各角色 PNG 帧 + manifest.json
 ├── tests/
 │   └── test_smoke.py   # 冒烟测试：交互、状态机、角色库与切换
 └── README.md

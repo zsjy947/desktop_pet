@@ -39,7 +39,7 @@ def draw_frame(cv, *, state, t, facing, bubble_text, particles):
         _draw_sleep_loaf(cv, oval, line, poly)
         draw_particles(cv, particles)
         if bubble_text:
-            draw_bubble(cv, bubble_text)
+            draw_bubble(cv, bubble_text, C.WINDOW_SIZE)
         return
 
     # ---------- 尾巴（画在身体后面）：上翘的 S 形 + 奶油尾尖 + 深色尾环 ----------
@@ -143,7 +143,7 @@ def draw_frame(cv, *, state, t, facing, bubble_text, particles):
 
     # ---------- 气泡 ----------
     if bubble_text:
-        draw_bubble(cv, bubble_text)
+        draw_bubble(cv, bubble_text, C.WINDOW_SIZE)
 
 
 def _draw_sleep_loaf(cv, oval, line, poly):

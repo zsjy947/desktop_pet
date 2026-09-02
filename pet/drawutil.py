@@ -77,27 +77,30 @@ def wrap_text(cv, text, max_width):
     return lines
 
 
-def draw_bubble(cv, text):
-    """头顶圆角气泡，按文字自动换行并调整高度。"""
-    max_w = 118
+def draw_bubble(cv, text, size=None):
+    """头顶圆角气泡，按文字自动换行并调整高度。size 为窗口边长
+    （图片精灵窗口更大，气泡按比例放大）。"""
+    k = (size or C.WINDOW_SIZE) / C.WINDOW_SIZE
+    max_w = 118 * k
     lines = wrap_text(cv, text, max_w)[:3]  # 最多三行，台词应尽量短
     f = _font_for(cv)
     lh = f.metrics('linespace')
-    w = max(f.measure(s) for s in lines) + 24
-    h = len(lines) * lh + 14
-    x1 = min(16.0, C.WINDOW_SIZE / 2 - w / 2)
+    w = max(f.measure(s) for s in lines) + 24 * k
+    h = len(lines) * lh + 14 * k
+    x1 = min(16 * k, C.WINDOW_SIZE * k / 2 - w / 2)
     x2 = x1 + w
-    y1 = 2
+    y1 = 2 * k
     y2 = y1 + h
-    r = 8
+    r = 8 * k
     pts = [(x1 + r, y1), (x2 - r, y1), (x2, y1 + r), (x2, y2 - r),
            (x2 - r, y2), (x1 + r, y2), (x1, y2 - r), (x1, y1 + r)]
     cx = (x1 + x2) / 2
     cv.create_polygon(pts, smooth=True, fill=C.BUBBLE_BG,
                       outline=C.BUBBLE_EDGE, width=2)
-    cv.create_polygon([(cx - 8, y2 - 1), (cx + 8, y2 - 1), (cx, y2 + 9)],
+    cv.create_polygon([(cx - 8 * k, y2 - k), (cx + 8 * k, y2 - k),
+                       (cx, y2 + 9 * k)],
                       fill=C.BUBBLE_BG, outline='')
-    cv.create_line([(cx - 7, y2), (cx, y2 + 8), (cx + 7, y2)],
+    cv.create_line([(cx - 7 * k, y2), (cx, y2 + 8 * k), (cx + 7 * k, y2)],
                    fill=C.BUBBLE_BG, width=2)
     cv.create_text(cx, y1 + h / 2, text='\n'.join(lines), font=C.FONT,
                    fill=C.BUBBLE_FG, width=max_w, justify='center')

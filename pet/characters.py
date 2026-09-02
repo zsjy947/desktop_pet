@@ -187,6 +187,23 @@ GIRLS = [
     ),
     dict(
         id='mao', name='毛晓彤', kind='girl',
+        hair='#26242B', hair_dark='#1D1B22', style='long',
+        eye='#4A3A30', outfit='dress', c1='#FAFAF6', c2='#E8E4DC',
+        leg='#F7F5EF', shoes='#2A2730',
+        acc='headband', acc_color='#FBFAF6', necklace=True,
+        phrases=_p(
+            talk=['今天的风，软软的呢', '安安静静地，陪你一会儿',
+                  '白裙子要干干净净的才好'],
+            feed=['谢谢……我会好好珍藏的', '嗯，很温柔的味道'],
+            pet=['唔……发饰都要歪了', '……嗯，很舒服呢'],
+            sleep=['晚安，愿星星守护你', '夜安……做个安静的梦'],
+            wake=['早安……昨晚睡得好吗', '嗯，新的一天，请多关照'],
+            drop=['呀……膝盖有点疼', '呜……珍珠项链都飞出去了'],
+            switch=['嗯，请多指教。'],
+        ),
+    ),
+    dict(
+        id='wang', name='王玉雯', kind='girl',
         hair='#4A3830', hair_dark='#382A24', style='long',
         eye='#5A4636', outfit='tutu', c1='#D98A93', c2='#E8ADB4',
         leg='#E3A0A8', shoes='#D98A93',
@@ -200,23 +217,6 @@ GIRLS = [
             wake=['唔……演出开始了吗？', '呵，睡了个美容觉'],
             drop=['哎呀——还好舞步够稳！', '旋转落地，完美……大概'],
             switch=['登台喽——请多鼓掌！'],
-        ),
-    ),
-    dict(
-        id='wang', name='王玉雯', kind='girl',
-        hair='#26242B', hair_dark='#1D1B22', style='long',
-        eye='#4A3A30', outfit='dress', c1='#FAFAF6', c2='#E8E4DC',
-        leg='#F7F5EF', shoes='#2A2730',
-        acc='headband', acc_color='#FBFAF6', necklace=True,
-        phrases=_p(
-            talk=['今天的风，软软的呢', '安安静静地，陪你一会儿',
-                  '白裙子要干干净净的才好'],
-            feed=['谢谢……我会好好珍藏的', '嗯，很温柔的味道'],
-            pet=['唔……头纱都要歪了', '……嗯，很舒服呢'],
-            sleep=['晚安，愿星星守护你', '夜安……做个安静的梦'],
-            wake=['早安……昨晚睡得好吗', '嗯，新的一天，请多关照'],
-            drop=['呀……膝盖有点疼', '呜……珍珠项链都飞出去了'],
-            switch=['嗯，请多指教。'],
         ),
     ),
     dict(
@@ -254,7 +254,11 @@ GIRLS = [
     ),
 ]
 
-# id -> 预设（橘猫排最前）
+# id -> 预设（橘猫排最前）；少女预设的 photo 字段指向 assets/ 下
+# 由 tools/build_sprites.py 生成的图片精灵（缺失时回落到 Canvas 绘制）
+for _preset in GIRLS:
+    _preset.setdefault('photo', _preset['id'])
+
 CHARACTERS = OrderedDict((p['id'], p) for p in [CAT] + GIRLS)
 
 
