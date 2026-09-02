@@ -82,3 +82,8 @@ class Behavior:
 
     def turn_around(self):
         self.facing *= -1
+
+    def pause(self):
+        """右键菜单打开时暂停：走路的先站定。"""
+        if self.state == 'walk':
+            self._idle()

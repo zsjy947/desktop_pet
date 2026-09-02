@@ -1,21 +1,37 @@
 # -*- coding: utf-8 -*-
-"""主窗口：无边框置顶透明窗 + 多显示器漫游 + 鼠标交互 + 主循环。"""
+"""主窗口：无边框置顶透明窗 + 多显示器漫游 + 鼠标交互 + 主循环。
+
+支持多角色（橘猫 / 参考图转化的 Q 版少女们），右键菜单弹出在宠物
+上方（菜单底边贴住宠物头顶，绝不压住宠物），同时宠物保持最顶层、
+不被任务栏遮挡。
+"""
+import json
 import math
+import os
 import random
 import sys
 import time
 import tkinter as tk
 
 from . import config as C
+from . import girl_sprites
 from . import screens
+from . import sprites
 from .behavior import Behavior
-from .sprites import draw_frame
+from .characters import CHARACTERS, get as get_character
 
 # Win32 SetWindowPos 参数：HWND_TOPMOST + 不改位置/大小/不抢焦点
 _HWND_TOPMOST = -1
 _SWP_NOSIZE = 0x0001
 _SWP_NOMOVE = 0x0002
 _SWP_NOACTIVATE = 0x0010
+
+_PREF_FILE = os.path.join(os.path.expanduser('~'), '.desktop_pet.json')
+
+# 右键菜单高度估算（实测 Windows 9pt 菜单项约 22px，含 emoji 留了余量）
+_MENU_ITEM_H = 26
+_MENU_SEP_H = 8
+_MENU_PAD = 10
 
 
 def _win32_user32():
@@ -37,10 +53,40 @@ def _win32_user32():
         return None
 
 
+def load_pref():
+    """读取上次选择的角色 id；没有或损坏时返回 None。"""
+    try:
+        with open(_PREF_FILE, encoding='utf-8') as f:
+            return json.load(f).get('char')
+    except Exception:
+        return None
+
+
+def save_pref(char_id):
+    try:
+        with open(_PREF_FILE, 'w', encoding='utf-8') as f:
+            json.dump({'char': char_id}, f)
+    except Exception:
+        pass
+
+
+def menu_origin(pet_x, pet_y, size, monitor, n_items, n_seps):
+    """右键菜单弹出位置：菜单底边贴在宠物头顶上方，不压住宠物。
+
+    monitor 为宠物当前所在显示器，用于把菜单夹回屏幕内。
+    返回菜单左上角应出现的位置 (x, y)。
+    """
+    est = n_items * _MENU_ITEM_H + n_seps * _MENU_SEP_H + _MENU_PAD
+    x = pet_x + size / 2 - 70
+    x = min(max(x, monitor.x + 2), monitor.x + monitor.w - 150)
+    y = pet_y + 14 - est          # 14 ≈ 宠物头顶在窗口内的起始高度
+    y = max(y, monitor.y + 2)     # 屏幕上方放不下时至少贴住顶边
+    return int(x), int(y)
+
+
 class PetApp:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title('桌面橘猫')
         self.size = C.WINDOW_SIZE
         size = self.size
 
@@ -75,6 +121,12 @@ class PetApp:
                             cursor='hand2')
         self.cv.pack()
 
+        # 当前角色：从用户目录的偏好文件恢复
+        self.char_id = load_pref() or 'cat'
+        self.char = get_character(self.char_id)
+        self._char_var = tk.StringVar(value=self.char_id)
+        self.root.title(f'桌面宠物 · {self.char["name"]}')
+
         self.behavior = Behavior()
         self.particles = []          # 爱心 / Zzz 粒子
         self.vy = 0.0                # 下落速度
@@ -82,6 +134,7 @@ class PetApp:
         self.talk_until = 0.0
         self.next_talk = time.monotonic() + random.uniform(
             C.IDLE_TALK_MIN, C.IDLE_TALK_MAX)
+        self._menu_open = False      # 右键菜单是否正在显示
 
         # 拖拽偏移（按下点相对窗口左上角）
         self._drag_off = (0, 0)
@@ -138,11 +191,16 @@ class PetApp:
         except Exception:
             pass
 
+    # ---------------- 台词 ----------------
+    def _p(self, key):
+        """当前角色的某类台词列表。"""
+        return self.char['phrases'][key]
+
     # ---------------- 鼠标交互 ----------------
     def _on_press(self, event):
         if self.behavior.state == 'sleep':
             self.behavior.wake()
-            self._say(random.choice(C.WAKE_PHRASES))
+            self._say(random.choice(self._p('wake')))
         self.behavior.start_drag()
         self.vy = 0.0
         self._drag_off = (event.x_root - self.x, event.y_root - self.y)
@@ -166,6 +224,9 @@ class PetApp:
         self._pet()
 
     def _on_menu(self, event):
+        """右键菜单：弹在宠物上方（底边贴住头顶），不遮挡宠物。"""
+        if self._menu_open:
+            return
         menu = tk.Menu(self.root, tearoff=0)
         menu.add_command(label='🍪 喂食', command=self._feed)
         menu.add_command(label='🖐 摸摸头', command=self._pet)
@@ -173,8 +234,56 @@ class PetApp:
         menu.add_command(label=sleep_label, command=self._toggle_sleep)
         menu.add_command(label='💬 说句话', command=self._chat)
         menu.add_separator()
+        menu.add_radiobutton(label='🐱 橘猫', variable=self._char_var,
+                             value='cat', command=self._switch_character)
+        for preset in CHARACTERS.values():
+            if preset['kind'] != 'girl':
+                continue
+            menu.add_radiobutton(label=f'🧚 {preset["name"]}',
+                                 variable=self._char_var, value=preset['id'],
+                                 command=self._switch_character)
+        menu.add_separator()
         menu.add_command(label='🚪 退出', command=self.root.destroy)
-        menu.tk_popup(event.x_root, event.y_root)
+
+        n_items = menu.index('end') + 1
+        n_seps = sum(1 for i in range(n_items)
+                     if menu.type(i) == 'separator')
+        m = screens.at(self.monitors, self.x + self.size / 2,
+                       self.y + self.size / 2) or self.virtual
+        mx, my = menu_origin(self.x, self.y, self.size, m, n_items, n_seps)
+
+        # 菜单显示期间原地站好，菜单就会一直悬在宠物头顶
+        self.behavior.pause()
+        self._menu_open = True
+        try:
+            menu.tk_popup(mx, my)
+        finally:
+            menu.grab_release()
+        self.root.after(150, lambda: self._watch_menu(menu))
+
+    def _watch_menu(self, menu):
+        """菜单关闭后恢复动画。"""
+        if not self._menu_open:
+            return
+        if menu.winfo_ismapped():
+            self.root.after(120, lambda: self._watch_menu(menu))
+        else:
+            self._menu_open = False
+            try:
+                menu.destroy()
+            except Exception:
+                pass
+
+    def _switch_character(self):
+        """切换角色：换外观 + 换台词包，并记住选择。"""
+        new_id = self._char_var.get()
+        if new_id not in CHARACTERS:
+            return
+        self.char_id = new_id
+        self.char = CHARACTERS[new_id]
+        save_pref(new_id)
+        self.root.title(f'桌面宠物 · {self.char["name"]}')
+        self._say(random.choice(self._p('switch')))
 
     # ---------------- 菜单动作 ----------------
     def _feed(self):
@@ -182,25 +291,25 @@ class PetApp:
             self.behavior.wake()
         self.behavior.happy()
         self._spawn_hearts(8)
-        self._say(random.choice(C.FEED_PHRASES))
+        self._say(random.choice(self._p('feed')))
 
     def _pet(self):
         if self.behavior.state == 'sleep':
             self.behavior.wake()
         self.behavior.happy()
         self._spawn_hearts(5)
-        self._say(random.choice(C.PET_PHRASES))
+        self._say(random.choice(self._p('pet')))
 
     def _toggle_sleep(self):
         if self.behavior.state == 'sleep':
             self.behavior.wake()
-            self._say(random.choice(C.WAKE_PHRASES))
+            self._say(random.choice(self._p('wake')))
         else:
             self.behavior.sleep()
-            self._say(random.choice(C.SLEEP_PHRASES))
+            self._say(random.choice(self._p('sleep')))
 
     def _chat(self):
-        self._say(random.choice(C.PHRASES))
+        self._say(random.choice(self._p('talk')))
 
     # ---------------- 气泡与粒子 ----------------
     def _say(self, text):
@@ -238,38 +347,41 @@ class PetApp:
         t = now - self._t0
         b = self.behavior
 
-        self._ensure_topmost()
+        if not self._menu_open:
+            # 菜单显示期间保持原样，不要每帧动窗口（会干扰弹出菜单）
+            self._ensure_topmost()
 
-        # 走路位移 + 虚拟桌面边缘掉头 + 跨屏地面处理
-        if b.moving:
-            self.x += C.WALK_SPEED * b.facing
-            if self.x <= self.min_x or self.x >= self.max_x:
-                self.x = min(max(self.x, self.min_x), self.max_x)
-                b.turn_around()
-            gy = self.ground_y_at(self.x, self.y)
-            if gy < self.y - 1:      # 前方地面更高（如隔壁屏位置偏上）：走不过去，掉头
-                b.turn_around()
+        if not self._menu_open:
+            # 走路位移 + 虚拟桌面边缘掉头 + 跨屏地面处理
+            if b.moving:
                 self.x += C.WALK_SPEED * b.facing
-            elif gy > self.y + 1:    # 前方地面更低（走下台阶）：顺势掉下去
-                b.fall()
-                self.vy = 0.0
-
-        # 悬空下落 + 落地反弹
-        if b.state == 'fall':
-            self.vy += C.GRAVITY
-            self.y += self.vy
-            gy = self.ground_y_at(self.x, self.y)
-            if self.y >= gy:
-                self.y = gy
-                if self.vy > 3.0:
-                    self.vy = -self.vy * C.BOUNCE
-                    self._say(random.choice(C.DROP_PHRASES))
-                else:
-                    b.land()
+                if self.x <= self.min_x or self.x >= self.max_x:
+                    self.x = min(max(self.x, self.min_x), self.max_x)
+                    b.turn_around()
+                gy = self.ground_y_at(self.x, self.y)
+                if gy < self.y - 1:      # 前方地面更高：走不过去，掉头
+                    b.turn_around()
+                    self.x += C.WALK_SPEED * b.facing
+                elif gy > self.y + 1:    # 前方地面更低（走下台阶）：顺势掉下去
+                    b.fall()
                     self.vy = 0.0
 
-        # 状态机随机切换（happy 到期回落等也在其中处理）
-        b.update()
+            # 悬空下落 + 落地反弹
+            if b.state == 'fall':
+                self.vy += C.GRAVITY
+                self.y += self.vy
+                gy = self.ground_y_at(self.x, self.y)
+                if self.y >= gy:
+                    self.y = gy
+                    if self.vy > 3.0:
+                        self.vy = -self.vy * C.BOUNCE
+                        self._say(random.choice(self._p('drop')))
+                    else:
+                        b.land()
+                        self.vy = 0.0
+
+            # 状态机随机切换（happy 到期回落等也在其中处理）
+            b.update()
 
         # 睡觉时冒 Zzz
         if b.state == 'sleep' and random.random() < 0.05:
@@ -277,7 +389,7 @@ class PetApp:
 
         # 随机碎碎念
         if b.state in ('idle', 'walk') and now >= self.next_talk:
-            self._say(random.choice(C.PHRASES))
+            self._say(random.choice(self._p('talk')))
             self.next_talk = now + random.uniform(C.IDLE_TALK_MIN, C.IDLE_TALK_MAX)
         if self.talk_until <= now:
             self.bubble_text = ''
@@ -290,9 +402,17 @@ class PetApp:
             p['y'] += p['vy'] * dt
         self.particles = [p for p in self.particles if p['age'] < p['life']]
 
-        # 移动窗口并重绘
-        self.root.geometry(f'+{int(self.x)}+{int(self.y)}')
-        draw_frame(self.cv, state=b.state, t=t, facing=b.facing,
-                   bubble_text=self.bubble_text, particles=self.particles)
+        # 移动窗口并重绘（菜单显示期间窗口原地不动）
+        if not self._menu_open:
+            self.root.geometry(f'+{int(self.x)}+{int(self.y)}')
+        if self.char['kind'] == 'cat':
+            sprites.draw_frame(self.cv, state=b.state, t=t, facing=b.facing,
+                               bubble_text=self.bubble_text,
+                               particles=self.particles)
+        else:
+            girl_sprites.draw_frame(self.cv, char=self.char, state=b.state,
+                                    t=t, facing=b.facing,
+                                    bubble_text=self.bubble_text,
+                                    particles=self.particles)
 
         self._schedule_tick()

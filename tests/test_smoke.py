@@ -1,17 +1,30 @@
 # -*- coding: utf-8 -*-
-"""冒烟测试：验证启动渲染、拖拽落地、摸头、菜单动作与状态机流转。
+"""冒烟测试：验证启动渲染、拖拽落地、摸头、菜单动作、角色切换与状态机流转。
 
 运行：python -m unittest tests.test_smoke -v
 （会短暂弹出一个测试窗口，属正常现象。）
 """
+import tempfile
 import time
 import unittest
+from unittest import mock
 
+from pet import characters
+from pet import pet_window
 from pet.pet_window import PetApp
 
 
 class SmokeTest(unittest.TestCase):
     def setUp(self):
+        # 偏好文件指向临时目录，避免测试污染用户主目录
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        import os
+        pref = os.path.join(tmp.name, 'pet_pref.json')
+        patcher = mock.patch.object(pet_window, '_PREF_FILE', pref)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
         self.app = PetApp()
         self.pump(1)  # 先让窗口完成映射，否则合成的鼠标事件会被丢弃
 
@@ -118,6 +131,93 @@ class SmokeTest(unittest.TestCase):
         self.assertGreaterEqual(app.ground_y, v.y)
         self.assertGreaterEqual(app.min_x, v.x)
         self.assertLessEqual(app.max_x, v.x + v.w)
+
+    def test_characters_library(self):
+        """角色库：橘猫 + 12 个参考图少女，台词类别齐全。"""
+        self.assertEqual(characters.CAT['kind'], 'cat')
+        girls = [p for p in characters.CHARACTERS.values() if p['kind'] == 'girl']
+        self.assertEqual(len(girls), 12)
+        for preset in characters.CHARACTERS.values():
+            for key in ('talk', 'feed', 'pet', 'sleep', 'wake', 'drop',
+                        'switch'):
+                self.assertTrue(preset['phrases'][key],
+                                f'{preset["name"]} 缺少台词类别 {key}')
+        # 未知 id 回落到橘猫
+        self.assertIs(characters.get('nope'), characters.CAT)
+
+    def test_all_characters_render_all_states(self):
+        """所有角色 × 所有状态都能画出来，不抛异常。"""
+        states = ('idle', 'walk', 'sleep', 'drag', 'fall', 'happy')
+        cv = self.app.cv
+        for preset in characters.CHARACTERS.values():
+            for state in states:
+                if preset['kind'] == 'cat':
+                    from pet import sprites
+                    sprites.draw_frame(cv, state=state, t=0.4, facing=1,
+                                       bubble_text='测试气泡',
+                                       particles=[])
+                else:
+                    from pet import girl_sprites
+                    girl_sprites.draw_frame(cv, char=preset, state=state,
+                                            t=0.4, facing=-1,
+                                            bubble_text='测试气泡',
+                                            particles=[])
+            self.pump(1)
+
+    def test_switch_character_changes_phrases_and_persists(self):
+        app = self.app
+        old_name = app.char['name']
+        app._char_var.set('nino')
+        app._switch_character()
+        self.assertEqual(app.char['id'], 'nino')
+        self.assertEqual(app.char['name'], '中野二乃')
+        self.assertIsNot(app.char['phrases']['talk'],
+                         characters.CAT['phrases']['talk'])
+        self.pump(2)
+        self.assertTrue(app.bubble_text)
+        self.assertIn(app.bubble_text, app.char['phrases']['switch'])
+
+        # 偏好已写入临时文件，重新初始化时应恢复该角色
+        self.assertEqual(pet_window.load_pref(), 'nino')
+        self.assertEqual(pet_window.get_character(pet_window.load_pref())['name'],
+                         '中野二乃')
+
+        # 切回橘猫
+        app._char_var.set('cat')
+        app._switch_character()
+        self.assertEqual(app.char['id'], 'cat')
+        self.assertIsNotNone(old_name)
+
+    def test_menu_origin_above_pet(self):
+        """菜单弹出位置：底边贴住宠物头顶上方，且夹回屏幕内。"""
+        from pet import screens
+        m = screens.Monitor(0, 0, 1920, 1080)
+        pet_x, pet_y, size = 500, 920, 160
+        n_items, n_seps = 18, 2
+        x, y = pet_window.menu_origin(pet_x, pet_y, size, m, n_items, n_seps)
+        # 菜单估算高度
+        est = n_items * pet_window._MENU_ITEM_H + n_seps * pet_window._MENU_SEP_H
+        self.assertLessEqual(y + est, pet_y + 14, '菜单不应压住宠物')
+        self.assertGreaterEqual(x, m.x)
+        self.assertLessEqual(x, m.x + m.w - 150)
+        # 宠物已经很靠上时，菜单最多贴住屏幕顶边
+        _, y2 = pet_window.menu_origin(500, 10, size, m, n_items, n_seps)
+        self.assertGreaterEqual(y2, m.y + 2)
+
+    def test_behavior_pause_stops_walk(self):
+        """右键菜单打开时走路应先站定（真实弹窗交互由人工验证）。"""
+        app = self.app
+        app.behavior._walk()
+        x0 = app.x
+        app.behavior.pause()
+        self.assertEqual(app.behavior.state, 'idle')
+        self.pump(2)
+        self.assertEqual(app.x, x0, '暂停后不应再移动')
+
+        # 非 walk 状态时 pause 应无副作用
+        app.behavior.happy()
+        app.behavior.pause()
+        self.assertEqual(app.behavior.state, 'happy')
 
 
 if __name__ == '__main__':

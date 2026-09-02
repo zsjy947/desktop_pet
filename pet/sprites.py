@@ -1,18 +1,17 @@
 # -*- coding: utf-8 -*-
 """橘猫的逐帧绘制：不依赖任何图片素材，全部用 Canvas 图元程序化画出。
 
-每帧整体重绘一次（delete('all') 后重画），160x160 画布、约 30 个图元，
+每帧整体重绘一次（delete('all') 后重画），160x160 画布、约 40 个图元，
 30fps 下开销可忽略。
 """
 import math
 
 from . import config as C
-
-# 状态 -> 眼睛样式的映射在 _draw_eyes 中处理
+from .drawutil import make_mirror, draw_bubble, draw_particles
 
 
 def draw_frame(cv, *, state, t, facing, bubble_text, particles):
-    """绘制一帧。
+    """绘制一帧橘猫。
 
     state: idle | walk | sleep | drag | fall | happy
     t:     动画时间（秒）
@@ -21,26 +20,7 @@ def draw_frame(cv, *, state, t, facing, bubble_text, particles):
     particles: 粒子列表（爱心 / Zzz）
     """
     cv.delete('all')
-
-    fx = C.WINDOW_SIZE / 2  # 水平镜像中心
-
-    # ---- 带镜像的绘图小工具：传“朝右”的坐标，自动按 facing 翻转 ----
-    def mx(x):
-        return fx + (x - fx) * facing
-
-    def bx(x1, x2):
-        a, b = mx(x1), mx(x2)
-        return (min(a, b), max(a, b))
-
-    def oval(x1, y1, x2, y2, **kw):
-        a, b = bx(x1, x2)
-        cv.create_oval(a, y1, b, y2, **kw)
-
-    def line(pts, **kw):
-        cv.create_line([(mx(x), y) for x, y in pts], **kw)
-
-    def poly(pts, **kw):
-        cv.create_polygon([(mx(x), y) for x, y in pts], **kw)
+    mx, bx, oval, line, poly, both = make_mirror(cv, facing)
 
     # ---------- 姿态参数 ----------
     walk = t * 9.0 if state == 'walk' else 0.0
@@ -55,16 +35,27 @@ def draw_frame(cv, *, state, t, facing, bubble_text, particles):
         bob = 0.0
     hy = bob  # 头部组整体上下偏移
 
-    # ---------- 尾巴（画在身体后面）----------
+    if state == 'sleep':
+        _draw_sleep_loaf(cv, oval, line, poly)
+        draw_particles(cv, particles)
+        if bubble_text:
+            draw_bubble(cv, bubble_text)
+        return
+
+    # ---------- 尾巴（画在身体后面）：上翘的 S 形 + 奶油尾尖 + 深色尾环 ----------
     if state == 'walk':
         wag = math.sin(walk) * 3.0
     else:
         wag = math.sin(t * 2.6) * 6.0
-    tail_pts = [(106, 122), (124, 110), (120 + wag, 90 + wag * 0.6)]
+    tail_pts = [(102, 124), (122, 116), (128, 98), (118 + wag, 86 + wag * 0.4)]
     line(tail_pts, fill=C.OUTLINE, width=13, smooth=True, capstyle='round')
     line(tail_pts, fill=C.BODY, width=9, smooth=True, capstyle='round')
+    line([(123, 112), (129, 106)], fill=C.BODY_DARK, width=9, capstyle='round')
+    line([(126, 102), (131, 97)], fill=C.BODY_DARK, width=8, capstyle='round')
+    oval(113 + wag, 81 + wag * 0.4, 123 + wag, 91 + wag * 0.4,
+         fill=C.CREAM, outline='')
 
-    # ---------- 四条腿 ----------
+    # ---------- 四条腿（圆爪 + 奶油爪垫）----------
     phases = (0.0, math.pi, math.pi, 2 * math.pi)  # 后外、后内、前内、前外
     xs = (62, 74, 86, 98)
     for i, (lx, ph) in enumerate(zip(xs, phases)):
@@ -75,35 +66,51 @@ def draw_frame(cv, *, state, t, facing, bubble_text, particles):
         elif state in ('drag', 'fall'):
             lift = -3.0 + 3.0 * math.sin(t * 3.0 + i * 1.3)  # 悬空晃腿
             sway = 2.5 * math.sin(t * 3.0 + i * 1.3)
-        elif state == 'sleep':
-            lift = 0.0
         else:
             lift = 0.0
         leg_bottom = C.PET_FOOT_Y - lift
         oval(lx - 5 + sway, 128, lx + 5 + sway, leg_bottom,
              fill=C.BODY, outline=C.OUTLINE, width=2)
+        oval(lx - 5 + sway, leg_bottom - 8, lx + 5 + sway, leg_bottom,
+             fill=C.CREAM, outline=C.OUTLINE, width=1)
 
-    # ---------- 身体 ----------
-    oval(48, 96 + breathing * 0.5, 112, 140,
-         fill=C.BODY, outline=C.OUTLINE, width=2)
-    oval(60, 106 + breathing * 0.5, 100, 138, fill=C.CREAM, outline='')
-    # 背部条纹
-    line([(94, 100), (101, 116)], fill=C.BODY_DARK, width=4, capstyle='round')
-    line([(104, 103), (109, 119)], fill=C.BODY_DARK, width=4, capstyle='round')
+    # ---------- 身体（后宽前窄的流线形 + 后腿弧线）----------
+    poly([(78, 95), (96, 97), (109, 107), (112, 124), (106, 139),
+          (88, 142), (64, 142), (51, 134), (47, 117), (55, 102), (67, 96)],
+         smooth=True, fill=C.BODY, outline=C.OUTLINE, width=2)
+    line([(58, 110), (50, 122), (57, 134)], smooth=True,
+         fill=C.OUTLINE, width=2)
+    oval(60, 106, 100, 138, fill=C.CREAM, outline='')
+    # 胸口绒毛
+    poly([(66, 94), (72, 104), (78, 96), (84, 104), (90, 96), (95, 103),
+          (97, 94)], smooth=True, fill=C.CREAM, outline='')
+    # 背部条纹（带弧度）
+    line([(92, 99), (100, 115)], fill=C.BODY_DARK, width=4,
+         capstyle='round', smooth=True)
+    line([(103, 102), (109, 118)], fill=C.BODY_DARK, width=4,
+         capstyle='round', smooth=True)
 
     # ---------- 头部 ----------
     # 耳朵（先画，让头盖住耳根）
-    poly([(60, 54 + hy), (50, 26 + hy), (76, 46 + hy)],
+    poly([(58, 54 + hy), (46, 24 + hy), (78, 44 + hy)],
          fill=C.BODY, outline=C.OUTLINE, width=2)
-    poly([(100, 54 + hy), (110, 26 + hy), (84, 46 + hy)],
+    poly([(102, 54 + hy), (114, 24 + hy), (82, 44 + hy)],
          fill=C.BODY, outline=C.OUTLINE, width=2)
-    poly([(62, 49 + hy), (56, 34 + hy), (72, 44 + hy)], fill=C.EAR_INNER, outline='')
-    poly([(98, 49 + hy), (104, 34 + hy), (88, 44 + hy)], fill=C.EAR_INNER, outline='')
+    poly([(60, 49 + hy), (54, 33 + hy), (72, 44 + hy)], fill=C.EAR_INNER, outline='')
+    poly([(100, 49 + hy), (106, 33 + hy), (88, 44 + hy)], fill=C.EAR_INNER, outline='')
+    # 耳内绒毛
+    both(lambda X, _s: (line([(X(60), 43 + hy), (X(64), 37 + hy)],
+                             fill=C.CREAM, width=2),
+                        line([(X(64), 45 + hy), (X(69), 39 + hy)],
+                             fill=C.CREAM, width=2)))
 
-    oval(56, 48 + hy, 104, 96 + hy, fill=C.BODY, outline=C.OUTLINE, width=2)
+    oval(54, 46 + hy, 106, 98 + hy, fill=C.BODY, outline=C.OUTLINE, width=2)
     # 额头条纹
     for pts in ([(72, 48), (75, 55)], [(80, 47), (80, 55)], [(88, 48), (85, 55)]):
         line([(x, y + hy) for x, y in pts], fill=C.BODY_DARK, width=3, capstyle='round')
+
+    # 口鼻部（奶油色小椭圆，鼻子嘴巴都落在上面）
+    oval(68, 74 + hy, 92, 92 + hy, fill=C.CREAM, outline='')
 
     _draw_eyes(cv, state, t, hy, line=line, oval=oval)
 
@@ -114,39 +121,67 @@ def draw_frame(cv, *, state, t, facing, bubble_text, particles):
     if state == 'happy':
         line([(72, 84 + hy), (76, 90 + hy), (84, 90 + hy), (88, 84 + hy)],
              smooth=True, width=2, fill=C.OUTLINE)
-    elif state == 'sleep':
-        line([(77, 86 + hy), (83, 86 + hy)], width=2, fill=C.OUTLINE)
+        oval(77, 88 + hy, 83, 94 + hy, fill='#E8837E', outline='')
     elif state == 'drag':
         oval(76, 84 + hy, 84, 92 + hy, fill='', outline=C.OUTLINE, width=2)
     else:
         line([(74, 84 + hy), (77, 87 + hy), (80, 84 + hy), (83, 87 + hy), (86, 84 + hy)],
              smooth=True, width=2, fill=C.OUTLINE)
 
-    # 胡须
-    for y1, y2 in ((72, 68), (76, 76), (80, 84)):
-        line([(50, y1 + hy), (30, y2 + hy)], fill=C.OUTLINE, width=1)
-        line([(110, y1 + hy), (130, y2 + hy)], fill=C.OUTLINE, width=1)
+    # 胡须（从口鼻两侧出发，带弧度）
+    both(lambda X, _s: [line([(X(66), y1 + hy), (X(44), y2 + hy)],
+                             fill=C.OUTLINE, width=1, smooth=True)
+                        for y1, y2 in ((74, 70), (78, 78), (82, 86))])
 
     # 开心时的脸颊红晕
     if state == 'happy':
-        oval(58, 80 + hy, 68, 87 + hy, fill=C.BLUSH, outline='')
-        oval(92, 80 + hy, 102, 87 + hy, fill=C.BLUSH, outline='')
+        oval(56, 78 + hy, 66, 86 + hy, fill=C.BLUSH, outline='')
+        oval(94, 78 + hy, 104, 86 + hy, fill=C.BLUSH, outline='')
 
     # ---------- 粒子（爱心 / Zzz）----------
-    for p in particles:
-        ratio = 1.0 - p['age'] / p['life']
-        color = C.HEART if ratio > 0.45 else C.HEART_FADED
-        if p['kind'] == 'heart':
-            cv.create_text(p['x'], p['y'], text='♥',
-                           font=('Segoe UI', int(p['size']), 'bold'), fill=color)
-        else:
-            cv.create_text(p['x'], p['y'], text='Z',
-                           font=('Comic Sans MS', int(p['size']), 'bold'),
-                           fill='#9FB4C7')
+    draw_particles(cv, particles)
 
     # ---------- 气泡 ----------
     if bubble_text:
-        _draw_bubble(cv, bubble_text)
+        draw_bubble(cv, bubble_text)
+
+
+def _draw_sleep_loaf(cv, oval, line, poly):
+    """睡觉时蜷成一张“猫面包”，头搁在身前、尾巴绕过来。"""
+    # 尾巴从身后绕到胸前
+    tail_pts = [(116, 142), (127, 133), (123, 120)]
+    line(tail_pts, fill=C.OUTLINE, width=12, smooth=True, capstyle='round')
+    line(tail_pts, fill=C.BODY, width=8, smooth=True, capstyle='round')
+    oval(118, 115, 128, 125, fill=C.CREAM, outline='')
+
+    # 蜷起的身体
+    oval(38, 116, 124, 148, fill=C.BODY, outline=C.OUTLINE, width=2)
+    # 露出的前爪
+    oval(58, 134, 76, 148, fill=C.CREAM, outline=C.OUTLINE, width=1)
+    oval(80, 134, 98, 148, fill=C.CREAM, outline=C.OUTLINE, width=1)
+
+    # 搁在身前的头
+    poly([(58, 102), (50, 80), (76, 94)], fill=C.BODY, outline=C.OUTLINE, width=2)
+    poly([(102, 102), (110, 80), (84, 94)], fill=C.BODY, outline=C.OUTLINE, width=2)
+    poly([(60, 98), (55, 87), (72, 95)], fill=C.EAR_INNER, outline='')
+    poly([(100, 98), (105, 87), (88, 95)], fill=C.EAR_INNER, outline='')
+    oval(50, 94, 110, 138, fill=C.BODY, outline=C.OUTLINE, width=2)
+
+    # 额头条纹
+    line([(72, 96), (74, 103)], fill=C.BODY_DARK, width=3, capstyle='round')
+    line([(88, 96), (86, 103)], fill=C.BODY_DARK, width=3, capstyle='round')
+
+    # 口鼻部 + 闭眼
+    oval(70, 112, 94, 130, fill=C.CREAM, outline='')
+    line([(62, 116), (68, 119), (74, 116)], smooth=True, width=2,
+         fill=C.EYE, capstyle='round')
+    line([(86, 116), (92, 119), (98, 116)], smooth=True, width=2,
+         fill=C.EYE, capstyle='round')
+    poly([(77, 118), (85, 118), (81, 122)], fill=C.NOSE, outline='')
+    line([(78, 125), (84, 125)], width=2, fill=C.OUTLINE)
+    for x1, y1, x2, y2 in ((68, 118, 48, 114), (68, 122, 48, 124),
+                           (94, 118, 114, 114), (94, 122, 114, 124)):
+        line([(x1, y1), (x2, y2)], fill=C.OUTLINE, width=1)
 
 
 def _draw_eyes(cv, state, t, hy, *, line, oval):
@@ -180,17 +215,3 @@ def _draw_eyes(cv, state, t, hy, *, line, oval):
         line([(ex2 - 4, ey), (ex2 + 4, ey)], width=2, fill=C.EYE)
     else:
         normal(ex1), normal(ex2)
-
-
-def _draw_bubble(cv, text):
-    """头顶圆角气泡。"""
-    x1, y1, x2, y2, r = 16, 2, 144, 36, 8
-    pts = [(x1 + r, y1), (x2 - r, y1), (x2, y1 + r), (x2, y2 - r),
-           (x2 - r, y2), (x1 + r, y2), (x1, y2 - r), (x1, y1 + r)]
-    cv.create_polygon(pts, smooth=True, fill=C.BUBBLE_BG,
-                      outline=C.BUBBLE_EDGE, width=2)
-    cv.create_polygon([(72, 34), (88, 34), (80, 45)],
-                      fill=C.BUBBLE_BG, outline='')
-    cv.create_line([(73, 35), (80, 44), (87, 35)],
-                   fill=C.BUBBLE_BG, width=2)
-    cv.create_text(80, 19, text=text, font=C.FONT, fill=C.BUBBLE_FG, width=120)
