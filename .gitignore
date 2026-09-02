@@ -19,3 +19,4 @@ tmp_*.py
 tmp_*.png
 tmp_preview/
 tmp_pixel_sheet.png
+custom_characters.json
