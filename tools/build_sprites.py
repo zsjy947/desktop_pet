@@ -176,18 +176,14 @@ def make_frames(sprite):
     }
 
 
-def build_one(src_path, char_id, model):
-    from rembg import new_session, remove
-    src = ImageOps.exif_transpose(Image.open(src_path)).convert('RGB')
-    session = new_session(model)
-    cut = remove(src, session=session)
-    cut = drop_small_islands(cut)
-    cut = clean_cutout(cut)
+def finish_character(cut, char_id, out_dir=OUT_DIR):
+    """从清理好的整身抠图（RGBA）生成全部状态帧并保存 manifest。
+
+    供 build_one 与 tools/add_character.py（角色添加接口）复用。"""
     sprite = fit_sprite(cut)
 
     frames = make_frames(sprite)
-    # 追加镜像帧：tkinter 的 PhotoImage 不能翻转，离线各存一份朝左的
-    out_dir = os.path.join(OUT_DIR, char_id)
+    out_dir = os.path.join(out_dir or OUT_DIR, char_id)
     os.makedirs(out_dir, exist_ok=True)
     manifest = {'id': char_id, 'window': WINDOW,
                 'foot_margin': FOOT_MARGIN, 'frames': {}}
@@ -202,6 +198,16 @@ def build_one(src_path, char_id, model):
     with open(os.path.join(out_dir, 'manifest.json'), 'w', encoding='utf-8') as f:
         json.dump(manifest, f, ensure_ascii=False, indent=1)
     return sprite, manifest
+
+
+def build_one(src_path, char_id, model):
+    from rembg import new_session, remove
+    src = ImageOps.exif_transpose(Image.open(src_path)).convert('RGB')
+    session = new_session(model)
+    cut = remove(src, session=session)
+    cut = drop_small_islands(cut)
+    cut = clean_cutout(cut)
+    return finish_character(cut, char_id)
 
 
 def make_sheet(built, path):

@@ -83,7 +83,9 @@ desktop_pet/
 │   ├── screens.py      # 多显示器枚举与虚拟桌面边界
 │   └── pet_window.py   # 无边框透明置顶窗、右键菜单、角色切换、主循环
 ├── tools/
-│   └── build_sprites.py# 离线构建：参考图 → 抠图 → 精灵帧（需 pillow+rembg）
+│   ├── build_sprites.py     # 离线构建：参考图 → 抠图 → 精灵帧（需 pillow+rembg）
+│   ├── add_character.py     # 角色添加接口：图片 → 新角色 + 台词（CLI 可编程调用）
+│   └── character_server.py  # 本地上传网页（127.0.0.1:8765）
 ├── assets/             # 构建产物：各角色 PNG 帧 + manifest.json
 ├── tests/
 │   └── test_smoke.py   # 冒烟测试：交互、状态机、角色库与切换
@@ -103,6 +105,24 @@ python -m unittest tests.test_smoke -v
 - 橘猫配色：改 `pet/config.py` 的 `BODY` / `BODY_DARK` / `CREAM`……
 - `WALK_SPEED` / `FPS` 调节走路速度与流畅度
 - `KEY_COLOR` 是透明键色，请保证它不与宠物配色重复
+
+## 添加新角色（接口）
+
+传入一张图片即可生成新角色（抠图 → 精灵帧 → 台词注册，写入
+`custom_characters.json`，宠物右键菜单重新打开时即可看到）：
+
+```bash
+# 方式一：本地上传网页（推荐），浏览器打开 http://127.0.0.1:8765
+python tools/character_server.py
+
+# 方式二：命令行（透明底 PNG 免抠图、免装 rembg）
+python tools/add_character.py --image 人物.png --id mychar --name 我的人物     --talk '你好呀' --talk '今天也加油' --feed '谢谢投喂！'
+```
+
+- 带 `--id` 规则：小写字母开头，仅含小写字母/数字/下划线，不与内置角色冲突
+- 抠图模型：真人照片 `u2net`，动漫插画 `--model isnet-anime`
+- 台词条目可省略（未填类别用通用台词），之后直接改 `custom_characters.json`
+- 删除角色：从 `custom_characters.json` 移除条目并删掉 `assets/<id>/`
 
 ## 打包成 exe（可选）
 

@@ -4,6 +4,7 @@
 运行：python -m unittest tests.test_smoke -v
 （会短暂弹出一个测试窗口，属正常现象。）
 """
+import json
 import tempfile
 import time
 import unittest
@@ -179,8 +180,8 @@ class SmokeTest(unittest.TestCase):
 
         # 偏好已写入临时文件，重新初始化时应恢复该角色
         self.assertEqual(pet_window.load_pref(), 'nino')
-        self.assertEqual(pet_window.get_character(pet_window.load_pref())['name'],
-                         '中野二乃')
+        self.assertEqual(pet_window.custom.registry()[pet_window.load_pref()]
+                         ['name'], '中野二乃')
 
         # 切回橘猫
         app._char_var.set('cat')
@@ -252,6 +253,112 @@ class SmokeTest(unittest.TestCase):
         app._switch_character()
         self.pump(3)
         self.assertEqual(app.size, 160)
+
+    def test_add_character_interface(self):
+        """角色添加接口：合成透明底图 → 精灵帧 + 台词注册 → 进入角色表。"""
+        import os
+        import shutil
+
+        from PIL import Image, ImageDraw
+        from pet import custom, photo_sprites
+        from tools.add_character import add_character
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        patcher = mock.patch.object(custom, 'CUSTOM_FILE',
+                                    os.path.join(tmp.name, 'cc.json'))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(shutil.rmtree, os.path.join('assets', 'zztest'),
+                        ignore_errors=True)
+
+        # 合成一张透明底“小人”
+        img = Image.new('RGBA', (120, 220), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        d.ellipse((30, 10, 90, 70), fill=(240, 200, 160, 255))
+        d.polygon([(25, 80), (95, 80), (110, 200), (10, 200)],
+                  fill=(120, 80, 200, 255))
+        img_path = os.path.join(tmp.name, 'figure.png')
+        img.save(img_path)
+
+        preset = add_character(img_path, 'zztest', '测试角色',
+                               phrases={'talk': ['你好，我是测试角色']})
+        self.assertEqual(preset['id'], 'zztest')
+        self.assertTrue(os.path.exists(
+            os.path.join('assets', 'zztest', 'manifest.json')))
+
+        reg = custom.registry()
+        self.assertIn('zztest', reg)
+        self.assertEqual(reg['zztest']['name'], '测试角色')
+        self.assertEqual(reg['zztest']['phrases']['talk'],
+                         ['你好，我是测试角色'])
+        self.assertEqual(reg['zztest']['phrases']['feed'],
+                         custom.DEFAULT_PHRASES['feed'], '未填类别用兜底台词')
+        self.assertTrue(photo_sprites.has_assets('zztest'))
+        self.assertEqual(self.app._size_for(reg['zztest']), 240)
+
+    def test_character_upload_server(self):
+        """上传网页：GET 表单 + POST multipart 走完整添加流程。"""
+        import http.client
+        import os
+        import shutil
+        import threading
+
+        from PIL import Image, ImageDraw
+        from pet import custom
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        patcher = mock.patch.object(custom, 'CUSTOM_FILE',
+                                    os.path.join(tmp.name, 'cc.json'))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(shutil.rmtree, os.path.join('assets', 'zzsrv'),
+                        ignore_errors=True)
+
+        from tools.character_server import Handler
+        from http.server import HTTPServer
+        server = HTTPServer(('127.0.0.1', 0), Handler)
+        th = threading.Thread(target=server.serve_forever, daemon=True)
+        th.start()
+        self.addCleanup(server.shutdown)
+
+        port = server.server_address[1]
+        conn = http.client.HTTPConnection('127.0.0.1', port, timeout=5)
+        conn.request('GET', '/')
+        body = conn.getresponse().read().decode('utf-8')
+        self.assertIn('添加桌面宠物角色', body)
+
+        img = Image.new('RGBA', (100, 200), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        d.ellipse((20, 10, 80, 60), fill=(200, 180, 160, 255))
+        d.rectangle((30, 70, 70, 180), fill=(60, 120, 200, 255))
+        import io
+        buf = io.BytesIO()
+        img.save(buf, 'PNG')
+
+        boundary = 'XBOUND123'
+        parts = []
+        for name, value in (('id', 'zzsrv'), ('name', '网页角色'),
+                            ('model', 'u2net'), ('talk', '网页来的问候'),
+                            ('talk', '第二句')):
+            parts.append(f'--{boundary}\r\nContent-Disposition: form-data; '
+                         f'name="{name}"\r\n\r\n{value}\r\n'.encode('utf-8'))
+        png = buf.getvalue()
+        parts.append(
+            f'--{boundary}\r\nContent-Disposition: form-data; name="image"; '
+            f'filename="f.png"\r\nContent-Type: image/png\r\n\r\n'
+            .encode('utf-8') + png + b'\r\n')
+        payload = b''.join(parts) + f'--{boundary}--\r\n'.encode()
+        conn.request('POST', '/add', body=payload, headers={
+            'Content-Type': f'multipart/form-data; boundary={boundary}'})
+        resp = json.loads(conn.getresponse().read().decode('utf-8'))
+        self.assertTrue(resp['ok'], resp)
+        self.assertEqual(resp['id'], 'zzsrv')
+        reg = custom.registry()
+        self.assertEqual(reg['zzsrv']['name'], '网页角色')
+        self.assertEqual(reg['zzsrv']['phrases']['talk'],
+                         ['网页来的问候', '第二句'])
 
     def test_behavior_pause_stops_walk(self):
         """右键菜单打开时走路应先站定（真实弹窗交互由人工验证）。"""

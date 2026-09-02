@@ -15,13 +15,13 @@ import tkinter as tk
 from tkinter import font as tkfont
 
 from . import config as C
+from . import custom
 from . import drawutil
 from . import girl_sprites
 from . import photo_sprites
 from . import screens
 from . import sprites
 from .behavior import Behavior
-from .characters import CHARACTERS, get as get_character
 
 # Win32 SetWindowPos 参数：HWND_TOPMOST + 不改位置/大小/不抢焦点
 _HWND_TOPMOST = -1
@@ -91,8 +91,9 @@ class PetApp:
         self.root = tk.Tk()
 
         # 当前角色：从用户目录的偏好文件恢复；图片精灵角色窗口更大
+        self.registry = custom.registry()
         self.char_id = load_pref() or 'cat'
-        self.char = get_character(self.char_id)
+        self.char = self.registry.get(self.char_id, self.registry['cat'])
         self._char_var = tk.StringVar(value=self.char_id)
         self.root.title(f'桌面宠物 · {self.char["name"]}')
         self.size = self._size_for(self.char)
@@ -264,7 +265,9 @@ class PetApp:
         menu.add_separator()
         menu.add_radiobutton(label='🐱 橘猫', variable=self._char_var,
                              value='cat', command=self._switch_character)
-        for preset in CHARACTERS.values():
+        # 每次打开菜单刷新自定义角色（上传网页新增的角色即时可见）
+        self.registry = custom.registry()
+        for preset in self.registry.values():
             if preset['kind'] != 'girl':
                 continue
             menu.add_radiobutton(label=f'🧚 {preset["name"]}',
@@ -305,10 +308,10 @@ class PetApp:
     def _switch_character(self):
         """切换角色：换外观 + 换台词包，并记住选择。"""
         new_id = self._char_var.get()
-        if new_id not in CHARACTERS:
+        if new_id not in self.registry:
             return
         self.char_id = new_id
-        self.char = CHARACTERS[new_id]
+        self.char = self.registry[new_id]
         save_pref(new_id)
         self.root.title(f'桌面宠物 · {self.char["name"]}')
 
