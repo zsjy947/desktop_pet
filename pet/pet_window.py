@@ -12,8 +12,10 @@ import random
 import sys
 import time
 import tkinter as tk
+from tkinter import font as tkfont
 
 from . import config as C
+from . import drawutil
 from . import girl_sprites
 from . import photo_sprites
 from . import screens
@@ -71,16 +73,15 @@ def save_pref(char_id):
         pass
 
 
-def menu_origin(pet_x, pet_y, size, monitor, n_items, n_seps):
-    """右键菜单弹出位置：菜单底边贴在宠物头顶上方，不压住宠物。
-
-    monitor 为宠物当前所在显示器，用于把菜单夹回屏幕内。
+def menu_origin(pet_x, window_top_y, size, monitor, n_items, n_seps):
+    """右键菜单弹出位置：菜单底边贴在窗口顶边（对话气泡区）上方，
+    完全不遮挡宠物与气泡。monitor 用于把菜单夹回屏幕内。
     返回菜单左上角应出现的位置 (x, y)。
     """
     est = n_items * _MENU_ITEM_H + n_seps * _MENU_SEP_H + _MENU_PAD
     x = pet_x + size / 2 - 70
     x = min(max(x, monitor.x + 2), monitor.x + monitor.w - 150)
-    y = pet_y + 14 - est          # 14 ≈ 宠物头顶在窗口内的起始高度
+    y = window_top_y - est - 4
     y = max(y, monitor.y + 2)     # 屏幕上方放不下时至少贴住顶边
     return int(x), int(y)
 
@@ -105,7 +106,10 @@ class PetApp:
         self.max_x = self.virtual.x + self.virtual.w - size
 
         self._init_position()
-        self.root.geometry(f'{size}x{size}+{int(self.x)}+{int(self.y)}')
+        # 窗口在宠物区上方加高出一截“对话区”：气泡画在那里，不再遮挡人物
+        self._bubble_extra = self._bubble_area_height()
+        self.root.geometry(
+            f'{size}x{size + self._bubble_extra}+{int(self.x)}+{int(self.y)}')
         self.root.overrideredirect(True)                    # 无边框
         self.root.attributes('-topmost', True)              # 置顶（基础手段）
         self.root.configure(bg=C.KEY_COLOR)
@@ -126,7 +130,13 @@ class PetApp:
         self.cv = tk.Canvas(self.root, width=size, height=size,
                             bg=C.KEY_COLOR, highlightthickness=0, bd=0,
                             cursor='hand2')
-        self.cv.pack()
+        self.cv.place(x=0, y=self._bubble_extra)   # 宠物区贴在窗口下部
+
+        # 对话区画布：只画气泡，永远不覆盖宠物
+        self.cv_bubble = tk.Canvas(self.root, width=size,
+                                   height=self._bubble_extra,
+                                   bg=C.KEY_COLOR, highlightthickness=0, bd=0)
+        self.cv_bubble.place(x=0, y=0)
 
         self.behavior = Behavior()
         self.particles = []          # 爱心 / Zzz 粒子
@@ -151,6 +161,12 @@ class PetApp:
         self._schedule_tick()
 
     # ---------------- 位置与屏幕 ----------------
+    def _bubble_area_height(self, size=None):
+        """窗口顶部对话区高度：按台词字体行高预留三行 + 气泡尾巴。"""
+        k = (size or self.size) / 160
+        ls = tkfont.Font(root=self.root, font=C.FONT).metrics('linespace')
+        return int(3 * ls + 24 * k + 6)
+
     def _size_for(self, char):
         """角色的窗口边长：图片精灵角色用构建时的更大窗口。"""
         if (char.get('kind') == 'girl' and char.get('photo')
@@ -299,13 +315,19 @@ class PetApp:
         # 图片精灵角色窗口更大：窗口底边（脚底）保持不动
         new_size = self._size_for(self.char)
         if new_size != self.size:
-            self.y = self.y + self.size - new_size
+            self.y = self.y + self.size + self._bubble_extra - (
+                new_size + self._bubble_area_height(new_size))
             self.size = new_size
+            self._bubble_extra = self._bubble_area_height(self.size)
             self.max_x = self.virtual.x + self.virtual.w - self.size
             self.x = min(max(self.x, self.min_x), self.max_x)
             self._clamp_to_virtual()
             self.cv.config(width=self.size, height=self.size)
-        self.root.geometry(f'{self.size}x{self.size}+{int(self.x)}+{int(self.y)}')
+            self.cv.place(x=0, y=self._bubble_extra)
+            self.cv_bubble.config(width=self.size, height=self._bubble_extra)
+        self.root.geometry(
+            f'{self.size}x{self.size + self._bubble_extra}'
+            f'+{int(self.x)}+{int(self.y)}')
         self._say(random.choice(self._p('switch')))
 
     # ---------------- 菜单动作 ----------------
@@ -430,19 +452,24 @@ class PetApp:
         # 移动窗口并重绘（菜单显示期间窗口原地不动）
         if not self._menu_open:
             self.root.geometry(f'+{int(self.x)}+{int(self.y)}')
+        # 气泡画在顶部对话区画布上，不遮挡宠物
+        self.cv_bubble.delete('all')
+        if self.bubble_text:
+            drawutil.draw_bubble(self.cv_bubble, self.bubble_text,
+                                 self.size, self._bubble_extra)
         if self.char['kind'] == 'cat':
             sprites.draw_frame(self.cv, state=b.state, t=t, facing=b.facing,
-                               bubble_text=self.bubble_text,
+                               bubble_text='',
                                particles=self.particles)
         elif self._use_photo(self.char):
             photo_sprites.draw_frame(self.cv, char=self.char, state=b.state,
                                      t=t, facing=b.facing,
-                                     bubble_text=self.bubble_text,
+                                     bubble_text='',
                                      particles=self.particles)
         else:
             girl_sprites.draw_frame(self.cv, char=self.char, state=b.state,
                                     t=t, facing=b.facing,
-                                    bubble_text=self.bubble_text,
+                                    bubble_text='',
                                     particles=self.particles)
 
         self._schedule_tick()

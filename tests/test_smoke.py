@@ -189,20 +189,37 @@ class SmokeTest(unittest.TestCase):
         self.assertIsNotNone(old_name)
 
     def test_menu_origin_above_pet(self):
-        """菜单弹出位置：底边贴住宠物头顶上方，且夹回屏幕内。"""
+        """菜单弹出位置：底边贴在窗口顶边（对话区）上方，且夹回屏幕内。"""
         from pet import screens
         m = screens.Monitor(0, 0, 1920, 1080)
-        pet_x, pet_y, size = 500, 920, 160
+        pet_x, window_top, size = 500, 760, 240
         n_items, n_seps = 18, 2
-        x, y = pet_window.menu_origin(pet_x, pet_y, size, m, n_items, n_seps)
-        # 菜单估算高度
+        x, y = pet_window.menu_origin(pet_x, window_top, size, m,
+                                      n_items, n_seps)
         est = n_items * pet_window._MENU_ITEM_H + n_seps * pet_window._MENU_SEP_H
-        self.assertLessEqual(y + est, pet_y + 14, '菜单不应压住宠物')
+        self.assertLessEqual(y + est, window_top - 4, '菜单不应遮挡窗口内容')
         self.assertGreaterEqual(x, m.x)
         self.assertLessEqual(x, m.x + m.w - 150)
-        # 宠物已经很靠上时，菜单最多贴住屏幕顶边
+        # 窗口已经很靠上时，菜单最多贴住屏幕顶边
         _, y2 = pet_window.menu_origin(500, 10, size, m, n_items, n_seps)
         self.assertGreaterEqual(y2, m.y + 2)
+
+    def test_bubble_drawn_in_dedicated_area(self):
+        """气泡画在窗口顶部的对话区画布，不进入宠物画布。"""
+        app = self.app
+        self.assertGreater(app._bubble_extra, 0)
+        self.assertEqual(int(app.cv_bubble['height']), app._bubble_extra)
+        self.assertEqual(int(app.cv['height']), app.size)
+        app._chat()
+        self.pump_until(lambda: app.cv_bubble.find('all'), timeout=2)
+        self.assertTrue(app.bubble_text)
+        self.assertTrue(app.cv_bubble.find('all'),
+                        '对话区画布上应有气泡')
+        app.talk_until = time.monotonic() - 0.1
+        self.pump_until(lambda: not app.cv_bubble.find('all'), timeout=2)
+        self.assertFalse(app.bubble_text)
+        self.assertFalse(app.cv_bubble.find('all'),
+                         '气泡到期后应清空对话区画布')
 
     def test_photo_sprite_switch_and_render(self):
         """图片精灵角色：切换后窗口变大、播帧渲染正常，切回后恢复。"""

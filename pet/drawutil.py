@@ -77,32 +77,43 @@ def wrap_text(cv, text, max_width):
     return lines
 
 
-def draw_bubble(cv, text, size=None):
-    """头顶圆角气泡，按文字自动换行并调整高度。size 为窗口边长
-    （图片精灵窗口更大，气泡按比例放大）。"""
+def draw_bubble(cv, text, size=None, area_h=None):
+    """对话气泡：画在宠物上方的专用区域画布里（不遮挡人物）。
+
+    size 为窗口边长（缩放气泡尺寸），area_h 为对话区高度；
+    气泡贴着区域顶部，尾巴指向底边下方的宠物。超出容量的行会被截断。
+    """
     k = (size or C.WINDOW_SIZE) / C.WINDOW_SIZE
-    max_w = 118 * k
-    lines = wrap_text(cv, text, max_w)[:3]  # 最多三行，台词应尽量短
+    if not area_h:
+        area_h = int(float(cv['height']))
     f = _font_for(cv)
     lh = f.metrics('linespace')
-    w = max(f.measure(s) for s in lines) + 24 * k
-    h = len(lines) * lh + 14 * k
-    x1 = min(16 * k, C.WINDOW_SIZE * k / 2 - w / 2)
+    tail_h = 10 * k
+    max_w = 118 * k
+
+    lines = wrap_text(cv, text, max_w)
+    max_lines = max(1, int((area_h - tail_h - 10 * k) // lh))
+    lines = lines[:max_lines] or [text]
+
+    w = min(max(f.measure(s) for s in lines) + 24 * k, max_w + 24 * k)
+    h = len(lines) * lh + 12 * k
+    x1 = min(16 * k, (int(cv['width']) - w) / 2)
+    x1 = max(x1, 2)
     x2 = x1 + w
-    y1 = 2 * k
-    y2 = y1 + h
+    y1 = 3 * k
+    y2 = min(y1 + h, area_h - tail_h)
     r = 8 * k
     pts = [(x1 + r, y1), (x2 - r, y1), (x2, y1 + r), (x2, y2 - r),
            (x2 - r, y2), (x1 + r, y2), (x1, y2 - r), (x1, y1 + r)]
     cx = (x1 + x2) / 2
     cv.create_polygon(pts, smooth=True, fill=C.BUBBLE_BG,
                       outline=C.BUBBLE_EDGE, width=2)
-    cv.create_polygon([(cx - 8 * k, y2 - k), (cx + 8 * k, y2 - k),
-                       (cx, y2 + 9 * k)],
-                      fill=C.BUBBLE_BG, outline='')
-    cv.create_line([(cx - 7 * k, y2), (cx, y2 + 8 * k), (cx + 7 * k, y2)],
+    # 尾巴指向下方宠物
+    cv.create_polygon([(cx - 8 * k, y2 - 1), (cx + 8 * k, y2 - 1),
+                       (cx, area_h - 1)], fill=C.BUBBLE_BG, outline='')
+    cv.create_line([(cx - 6 * k, y2), (cx + 6 * k, y2)],
                    fill=C.BUBBLE_BG, width=2)
-    cv.create_text(cx, y1 + h / 2, text='\n'.join(lines), font=C.FONT,
+    cv.create_text(cx, y1 + (y2 - y1) / 2, text='\n'.join(lines), font=C.FONT,
                    fill=C.BUBBLE_FG, width=max_w, justify='center')
 
 
