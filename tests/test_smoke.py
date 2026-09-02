@@ -100,6 +100,25 @@ class SmokeTest(unittest.TestCase):
         self.assertEqual(app.behavior.facing, 1, '撞墙后应掉头')
         self.assertGreaterEqual(app.x, app.min_x)
 
+    def test_screens_and_ground(self):
+        from pet import screens
+        mons = screens.get_monitors((1920, 1080))
+        self.assertTrue(mons)
+        v = screens.union(mons)
+        self.assertGreater(v.w, 0)
+        self.assertGreater(v.h, 0)
+        # 主屏、点定位、按 x 定位都应返回合法显示器
+        self.assertIn(screens.primary(mons), mons)
+        self.assertIsNotNone(screens.at(mons, v.x + v.w // 2, v.y + v.h // 2))
+        self.assertIn(screens.at_x(mons, v.x), mons)
+
+        # 地面应落在虚拟桌面底边之上，窗口初始位置应在虚拟桌面内
+        app = self.app
+        self.assertLessEqual(app.ground_y, v.y + v.h)
+        self.assertGreaterEqual(app.ground_y, v.y)
+        self.assertGreaterEqual(app.min_x, v.x)
+        self.assertLessEqual(app.max_x, v.x + v.w)
+
 
 if __name__ == '__main__':
     unittest.main()

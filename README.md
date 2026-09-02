@@ -23,7 +23,8 @@ python main.py
 
 ## 它会做什么
 
-- 在屏幕底边自己散步，走到边缘会掉头
+- 在各显示器的任务栏上方散步（支持副屏，跨屏时会顺着“台阶”掉下去、爬不上去就掉头）
+- 始终保持最顶层：每帧用 Win32 `SetWindowPos(HWND_TOPMOST)` 压回顶层，点过任务栏也不会被挡住
 - 无聊时随机碎碎念（头顶气泡）
 - 什么都不做时发呆、眨眼、摇尾巴，深夜（23 点～次日 7 点）自动打盹冒 Zzz
 - 被拖到半空松手会自由落体，落地弹一下
@@ -38,6 +39,7 @@ desktop_pet/
 │   ├── config.py      # 所有可调参数：配色、速度、台词……
 │   ├── sprites.py     # 逐帧绘制：橘猫全靠 Canvas 图元程序化画出
 │   ├── behavior.py    # 行为状态机：idle/walk/sleep/drag/fall/happy
+│   ├── screens.py     # 多显示器枚举与虚拟桌面边界（EnumDisplayMonitors）
 │   └── pet_window.py  # 无边框透明置顶窗、鼠标交互、主循环
 ├── tests/
 │   └── test_smoke.py  # 冒烟测试：交互与状态机流转
@@ -70,4 +72,6 @@ pyinstaller --onefile --noconsole main.py
 
 - 透明窗口基于 Windows 的 `-transparentcolor` 实现，仅在 Windows 下有透明效果；
   其他平台会显示为一个小方块窗口（功能不受影响）。
-- 目前只在主显示器活动，不会跨屏乱跑。
+- 宠物在虚拟桌面（所有显示器）范围内活动：跨屏散步时会掉落到隔壁屏的地面；
+  若隔壁屏地面更高，它只会掉头走回来——不会爬台阶。
+- 置顶与任务栏压制的 `SetWindowPos` 仅在 Windows 上生效。

@@ -66,11 +66,14 @@ class Behavior:
     def start_drag(self):
         self.state = 'drag'
 
+    def fall(self):
+        self.state = 'fall'
+
     def release_drag(self, on_ground):
         if on_ground:
             self._idle()
         else:
-            self.state = 'fall'
+            self.fall()
 
     def land(self):
         """落地（含反弹），返回是否还需要继续反弹。"""

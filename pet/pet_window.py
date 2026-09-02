@@ -1,35 +1,74 @@
 # -*- coding: utf-8 -*-
-"""主窗口：无边框置顶透明窗 + 鼠标交互 + 主循环。"""
+"""主窗口：无边框置顶透明窗 + 多显示器漫游 + 鼠标交互 + 主循环。"""
 import math
 import random
+import sys
 import time
 import tkinter as tk
 
 from . import config as C
+from . import screens
 from .behavior import Behavior
 from .sprites import draw_frame
+
+# Win32 SetWindowPos 参数：HWND_TOPMOST + 不改位置/大小/不抢焦点
+_HWND_TOPMOST = -1
+_SWP_NOSIZE = 0x0001
+_SWP_NOMOVE = 0x0002
+_SWP_NOACTIVATE = 0x0010
+
+
+def _win32_user32():
+    """返回配置好参数类型的 user32；非 Windows 或失败时返回 None。"""
+    if sys.platform != 'win32':
+        return None
+    try:
+        import ctypes
+        import ctypes.wintypes as wt
+        user32 = ctypes.windll.user32
+        user32.GetParent.argtypes = [wt.HWND]
+        user32.GetParent.restype = wt.HWND
+        user32.SetWindowPos.argtypes = [wt.HWND, wt.HWND,
+                                        ctypes.c_int, ctypes.c_int,
+                                        ctypes.c_int, ctypes.c_int, wt.UINT]
+        user32.SetWindowPos.restype = wt.BOOL
+        return user32
+    except Exception:
+        return None
 
 
 class PetApp:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title('桌面橘猫')
-        size = C.WINDOW_SIZE
-        self.size = size
+        self.size = C.WINDOW_SIZE
+        size = self.size
 
-        screen_w = self.root.winfo_screenwidth()
-        screen_h = self.root.winfo_screenheight()
-        # “地面” = 窗口脚底贴着屏幕底边时窗口顶部的 y 坐标
-        self.ground_y = screen_h - size
-        self.min_x, self.max_x = 0, screen_w - size
+        # 多显示器：虚拟桌面边界 + 每块屏各自的“地面”
+        self.monitors = screens.get_monitors(
+            (self.root.winfo_screenwidth(), self.root.winfo_screenheight()))
+        self.virtual = screens.union(self.monitors)
+        self.min_x = self.virtual.x
+        self.max_x = self.virtual.x + self.virtual.w - size
 
-        self.x = self.max_x - 40
-        self.y = self.ground_y
-        self.root.geometry(f'{size}x{size}+{self.x}+{self.y}')
+        self._init_position()
+        self.root.geometry(f'{size}x{size}+{int(self.x)}+{int(self.y)}')
         self.root.overrideredirect(True)                    # 无边框
-        self.root.attributes('-topmost', True)              # 置顶
+        self.root.attributes('-topmost', True)              # 置顶（基础手段）
         self.root.configure(bg=C.KEY_COLOR)
         self.root.attributes('-transparentcolor', C.KEY_COLOR)  # 键色抠透明
+
+        # 任务栏本身也是 topmost 窗口，被点击后会盖住宠物，
+        # 因此记录原生句柄，主循环里周期性用 SetWindowPos 压回最顶层。
+        self._user32 = _win32_user32()
+        self._hwnd = None
+        if self._user32 is not None:
+            try:
+                self.root.update_idletasks()
+                self._hwnd = (self._user32.GetParent(self.root.winfo_id())
+                              or self.root.winfo_id())
+            except Exception:
+                self._hwnd = None
 
         self.cv = tk.Canvas(self.root, width=size, height=size,
                             bg=C.KEY_COLOR, highlightthickness=0, bd=0,
@@ -57,12 +96,47 @@ class PetApp:
         self._after_id = None
         self._schedule_tick()
 
+    # ---------------- 位置与屏幕 ----------------
+    def _init_position(self):
+        """出生在主屏右下角（任务栏上方）。"""
+        p = screens.primary(self.monitors)
+        self.x = min(p.x + p.w - self.size - 40, self.max_x)
+        self.y = p.y + p.h - self.size
+
+    def ground_y_at(self, x, y):
+        """脚底所在位置 (x, y) 处的地面高度（所属显示器的底边）。"""
+        cx = x + self.size / 2
+        m = screens.at(self.monitors, cx, y + self.size / 2)
+        if m is None:
+            m = screens.at_x(self.monitors, cx)
+        return m.y + m.h - self.size
+
+    @property
+    def ground_y(self):
+        return self.ground_y_at(self.x, self.y)
+
+    def _clamp_to_virtual(self):
+        """拖拽时把窗口限制在虚拟桌面范围内。"""
+        self.x = min(max(self.x, self.min_x), self.max_x)
+        self.y = min(max(self.y, self.virtual.y),
+                     self.virtual.y + self.virtual.h - self.size)
+
     # ---------------- 生命周期 ----------------
     def run(self):
         self.root.mainloop()
 
     def _schedule_tick(self):
         self._after_id = self.root.after(int(1000 / C.FPS), self._tick)
+
+    def _ensure_topmost(self):
+        """周期性把窗口顶回最顶层，保证不被任务栏等 topmost 窗口挡住。"""
+        if self._hwnd is None:
+            return
+        try:
+            self._user32.SetWindowPos(self._hwnd, _HWND_TOPMOST, 0, 0, 0, 0,
+                                      _SWP_NOSIZE | _SWP_NOMOVE | _SWP_NOACTIVATE)
+        except Exception:
+            pass
 
     # ---------------- 鼠标交互 ----------------
     def _on_press(self, event):
@@ -78,6 +152,7 @@ class PetApp:
             return
         self.x = event.x_root - self._drag_off[0]
         self.y = event.y_root - self._drag_off[1]
+        self._clamp_to_virtual()
 
     def _on_release(self, event):
         if self.behavior.state != 'drag':
@@ -163,19 +238,29 @@ class PetApp:
         t = now - self._t0
         b = self.behavior
 
-        # 走路位移 + 边缘掉头
+        self._ensure_topmost()
+
+        # 走路位移 + 虚拟桌面边缘掉头 + 跨屏地面处理
         if b.moving:
             self.x += C.WALK_SPEED * b.facing
             if self.x <= self.min_x or self.x >= self.max_x:
                 self.x = min(max(self.x, self.min_x), self.max_x)
                 b.turn_around()
+            gy = self.ground_y_at(self.x, self.y)
+            if gy < self.y - 1:      # 前方地面更高（如隔壁屏位置偏上）：走不过去，掉头
+                b.turn_around()
+                self.x += C.WALK_SPEED * b.facing
+            elif gy > self.y + 1:    # 前方地面更低（走下台阶）：顺势掉下去
+                b.fall()
+                self.vy = 0.0
 
         # 悬空下落 + 落地反弹
         if b.state == 'fall':
             self.vy += C.GRAVITY
             self.y += self.vy
-            if self.y >= self.ground_y:
-                self.y = self.ground_y
+            gy = self.ground_y_at(self.x, self.y)
+            if self.y >= gy:
+                self.y = gy
                 if self.vy > 3.0:
                     self.vy = -self.vy * C.BOUNCE
                     self._say(random.choice(C.DROP_PHRASES))
@@ -211,4 +296,3 @@ class PetApp:
                    bubble_text=self.bubble_text, particles=self.particles)
 
         self._schedule_tick()
-
