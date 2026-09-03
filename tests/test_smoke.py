@@ -383,6 +383,95 @@ class SmokeTest(unittest.TestCase):
         self.assertEqual(reg['zzsrv']['phrases']['talk'],
                          ['网页来的问候', '第二句'])
 
+    def test_hatch_sprites_synthetic(self):
+        """hatch-pet 图集桌宠：合成图集包 → 角色表/窗口尺寸/各状态渲染。"""
+        import os
+        import shutil
+
+        from PIL import Image, ImageDraw
+        from pet import hatch_sprites
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        patcher = mock.patch.object(hatch_sprites, 'HATCH_DIR', tmp.name)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        for cache in (hatch_sprites._metad, hatch_sprites._atlas_cache,
+                      hatch_sprites._cell_cache):
+            cache.clear()
+            self.addCleanup(cache.clear)
+
+        # 合成图集：第 0/1/2 行有内容，其余行保持全透明
+        atlas = Image.new('RGBA', (hatch_sprites.ATLAS_W, hatch_sprites.ATLAS_H),
+                          (0, 0, 0, 0))
+        d = ImageDraw.Draw(atlas)
+        for row, n in ((0, 6), (1, 8), (2, 8)):
+            for col in range(n):
+                x0, y0 = col * hatch_sprites.CELL_W, row * hatch_sprites.CELL_H
+                d.ellipse((x0 + 40, y0 + 40, x0 + 150, y0 + 202),
+                          fill=(240, 160, 60, 255))
+        os.makedirs(os.path.join(tmp.name, 'zzhatch'))
+        atlas.save(os.path.join(tmp.name, 'zzhatch', 'spritesheet.png'))
+        with open(os.path.join(tmp.name, 'zzhatch', 'pet.json'), 'w',
+                  encoding='utf-8') as f:
+            json.dump({'id': 'zzhatch', 'displayName': '图集测试',
+                       'description': '测试用', 'spritesheetPath': 'spritesheet.png',
+                       'available_rows': [0, 1, 2]}, f)
+
+        pets = hatch_sprites.list_pets()
+        self.assertIn('zzhatch', pets)
+        self.assertTrue(hatch_sprites.has_assets('zzhatch'))
+        self.assertEqual(hatch_sprites.window_size('zzhatch'), 208)
+        preset = hatch_sprites.preset(pets['zzhatch'])
+        self.assertEqual(preset['kind'], 'hatch')
+        self.assertTrue(preset['phrases']['talk'], '缺省台词应有兜底')
+
+        # 进入角色表并切换渲染所有状态（缺行回落 idle）
+        app = self.app
+        app.registry = app._registry()   # 等价于重开一次右键菜单的刷新
+        self.assertIn('zzhatch', app.registry)
+        app._char_var.set('zzhatch')
+        app._switch_character()
+        self.pump(3)
+        self.assertEqual(app.size, 208)
+        for state in ('idle', 'walk', 'sleep', 'happy', 'drag', 'fall'):
+            hatch_sprites.draw_frame(app.cv, char=app.char, state=state,
+                                     t=0.4, facing=-1, bubble_text='测试',
+                                     particles=[])
+            self.pump(1)
+        app._char_var.set('cat')
+        app._switch_character()
+        self.pump(2)
+        self.assertEqual(app.size, 160)
+
+    def test_hatch_pipeline_slots_and_atlas(self):
+        """hatch-pet 管线：条带切槽抠底 → 行内合成 → 图集契约校验。"""
+        from PIL import Image, ImageDraw
+        from tools import hatch_pet as hp
+
+        # 合成一条 4 帧白底条带（4 个红椭圆均分；模拟模型输出的任意布局）
+        strip = Image.new('RGB', (800, 400), (255, 255, 255))
+        d = ImageDraw.Draw(strip)
+        for i in range(4):
+            x0 = i * 200
+            d.ellipse((x0 + 50, 100, x0 + 150, 360), fill=(200, 80, 40))
+        slots = hp.extract_frames(strip, 4)
+        self.assertEqual(len(slots), 4)
+        for s in slots:
+            self.assertIsNotNone(s)
+            self.assertLessEqual(s.width, 110, '抠底后应只剩椭圆内容')
+
+        rows = {}
+        for _name, row, n, _d in hp.hs.ROW_SPECS:
+            rep = [slots[i % 4] for i in range(n)]
+            rows[row] = hp.place_row(rep, n)
+            self.assertEqual(rows[row][0].size, (192, 208))
+        rows[2] = hp.mirror_cells(rows[1])
+
+        atlas = hp.compose_atlas(rows)
+        self.assertEqual(atlas.size, (hp.hs.ATLAS_W, hp.hs.ATLAS_H))
+        self.assertEqual(hp.validate_atlas(atlas, strict=True), [])
+
     def test_behavior_pause_stops_walk(self):
         """右键菜单打开时走路应先站定（真实弹窗交互由人工验证）。"""
         app = self.app

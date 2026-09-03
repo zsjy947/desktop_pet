@@ -20,3 +20,7 @@ tmp_*.png
 tmp_preview/
 tmp_pixel_sheet.png
 custom_characters.json
+
+# hatch-pet 生成管线中间产物（只入库 hatched/<id>/{pet.json,spritesheet.png}）
+hatched/*/build/
+hatched/*/qa/

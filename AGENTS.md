@@ -19,18 +19,20 @@ pet/
   drawutil.py              共享绘制：镜像助手 / 气泡（独立对话区） / 粒子
   sprites.py               橘猫 Canvas 逐帧绘制
   girl_sprites.py          Q 版少女参数化绘制（图片帧缺失时的回落）
-  photo_sprites.py         图片精灵播放器（assets_pixel/ 优先于 assets/）
+  photo_sprites.py         图片精灵播放器（assets/ 帧目录）
+  hatch_sprites.py         hatch-pet 图集桌宠播放器（hatched/ 图集包）
   behavior.py              状态机 idle/walk/sleep/drag/fall/happy
-  screens.py               EnumDisplayMonitors 多显示器
+  screens.py               EnumDisplayMonitors + 工作区（GetMonitorInfoW）
   pet_window.py            主窗口：透明置顶、右键菜单、角色切换、主循环
 tools/
   build_sprites.py         高清精灵构建（抠图→清理→伪姿势帧，240px）
-  build_pixel_sprites.py   像素版构建（64px 量化+剪切段走路，pixel-art 分支）
+  hatch_pet.py             hatch-pet 生成管线（z-image-turbo 生姿势→图集）
   add_character.py         角色添加接口（CLI / 可编程）
   character_server.py      本地上传网页 http://127.0.0.1:8765
-tests/test_smoke.py        17 项冒烟测试（会短暂弹窗）
+tests/test_smoke.py        19 项冒烟测试（会短暂弹窗）
 assets/                    高清精灵帧（入库，~8.7MB）
-assets_pixel/              像素精灵帧（pixel-art 分支，~739KB）
+hatched/<id>/              图集桌宠包：pet.json + spritesheet.png（入库）；
+                           build/ 与 qa/ 为生成中间产物（不入库）
 reference/pictures/        用户提供的参考图（**不入库**）
 custom_characters.json     接口生成的自定义角色（**不入库**）
 ~/.desktop_pet.json        用户上次选择的角色（运行时写入）
@@ -42,8 +44,10 @@ custom_characters.json     接口生成的自定义角色（**不入库**）
 2. 运行宠物：`python main.py` 或 `run.bat`。仅此时不需要任何第三方库。
 3. 开发/构建才需要：
    ```bash
-   pip install pillow "rembg[cpu]"
+   pip install pillow numpy requests "rembg[cpu]"
    ```
+   （hatch_pet.py 生成管线只需 pillow+numpy+requests；rembg 仅
+   build_sprites/add_character 抠参考图照片时用到。）
 4. **rembg 模型下载**：首次调用会从 GitHub 下载 onnx 模型；若遇
    SSL 证书错误（常见于企业代理），用 curl 绕过并放到 rembg 的模型目录：
    ```bash
@@ -54,7 +58,7 @@ custom_characters.json     接口生成的自定义角色（**不入库**）
      https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-anime.onnx
    ```
    模型选择：真人照片 `u2net`，动漫插画 `isnet-anime`。
-5. 测试：`python -m unittest tests.test_smoke -v`（17 项；弹一下测试窗口属正常）。
+5. 测试：`python -m unittest tests.test_smoke -v`（19 项；弹一下测试窗口属正常）。
 
 ## 3. 构建与角色流程
 
@@ -62,10 +66,20 @@ custom_characters.json     接口生成的自定义角色（**不入库**）
   `--sheet` 出拼图预览）。管线：rembg 抠图 → 丢弃小连通域（背景杂物，
   阈值 18% 面积）→ 收缩 1px 过渡带 + alpha 二值化 + 边缘渗色去黑晕 →
   缩放 240px → 各状态伪姿势帧（朝右/朝左两套）+ manifest.json。
-- **像素版**（pixel-art 分支）：`python tools/build_pixel_sprites.py`。
-  64px 像素分辨率 + 24 色量化 + 3x 最近邻放大；全身像（高宽比≥1.5）
-  走路帧用上下半身水平错位伪装迈步。产物在 `assets_pixel/`，
-  运行时**优先于** `assets/` 加载，删目录即回落高清版。
+- **hatch-pet 图集桌宠**（hatch-pet 分支）：借鉴 OpenAI Codex 的
+  hatch-pet skill，图集契约与其一致（1536x1872 = 8 列 x 9 行，格
+  192x208，行序固定 idle/running-right/running-left/waving/jumping/
+  failed/waiting/running/review，未用格全透明）。
+  `python tools/hatch_pet.py --id mango --name 芒果 --prompt '...' [--style sticker]`：
+  z-image-turbo 先出 base 定形象（形象描述原样复述进每条提示当"身份锁"，
+  该 API 无参考图输入），再逐行生成姿势条带（running-left 由
+  running-right 逐帧镜像派生），确定性管线抠底→连通域检帧→行内统一
+  缩放（防帧间大小跳）→合成图集→契约校验→QA 联络表/GIF→打包
+  `hatched/<id>/`。重跑安全：build/ 下条带已存在即跳过（--force 重生）。
+  运行时 pet/hatch_sprites.py 按状态映射行：idle→idle、walk→
+  running-right/left、happy→waving、fall/drag→jumping、sleep→idle
+  第 0 帧；waiting/running/review 为 Codex 应用专属行，桌宠暂不用。
+  `--import-atlas x.webp` 可导入 Codex 孵化的现成图集。
 - **添加角色**：
   - 网页：`python tools/character_server.py` → http://127.0.0.1:8765
   - CLI：`python tools/add_character.py --image x.png --id mychar --name 名字
@@ -112,6 +126,18 @@ custom_characters.json     接口生成的自定义角色（**不入库**）
 - 拖进任务栏区域（地面以下）松手要在 `_on_release` 里贴回地面站好，
   不能让宠物留在屏幕外/被任务栏挡住。
 
+**hatch-pet 生成（hatch-pet 分支）**
+- 文生图模型**不听版式指令**：提示词写"单行横排 n 帧"，z-image-turbo
+  实测画成 4x3 网格（好在形象一致性不错）→ 确定性切帧不能按等分槽位
+  切，必须抠底后按连通域检测每个角色、行优先排序取帧（extract_frames）。
+- 无参考图输入可用，行与行之间身份会有漂移；行内一致性远好于行间。
+  行内统一缩放防帧间大小跳；不用的行（failed/review 实测偏大/偏小）
+  漂移可容忍，缺行运行时回落 idle（available_rows 写进 pet.json）。
+- tkinter 不认 webp：图集落 PNG；运行时用 tk 命令 `copy -from` 从大图
+  裁格（Python 3.12 的 `PhotoImage.copy()` 不带参数），不必拆小文件。
+- 透明像素 RGB 必须清零（与键色窗口同一硬性要求，hatch-pet 契约的
+  transparency invariant 也是这条）。
+
 **角色对号**
 - 批量看参考图会把照片和人对错号（毛晓彤/王玉雯踩过）：核对时必须用
   **带文件名标签的拼图**，不要凭记忆。
@@ -144,22 +170,24 @@ custom_characters.json     接口生成的自定义角色（**不入库**）
 
 ## 6. Git 布局
 
-- `main`：气泡独立对话区 + 角色添加接口 + AGENTS.md（本文档）
-- `pixel-art`：像素版精灵分支（基于 main，含全部 main 功能）
-- 不入库：`reference/`、`custom_characters.json`、`tmp_*`、用户偏好
-- 提交历史（本会话）：
+- `main`：落地高度自适应 + 气泡独立对话区 + 角色添加接口 + AGENTS.md
+- `hatch-pet`：图集桌宠（生成管线 + 播放器 + 已孵化示例「芒果」），基于 main
+- `pixel-art` 已废弃删除（2026-09，本地与远程均已删；像素方案用户不满意）
+- 不入库：`reference/`、`custom_characters.json`、`tmp_*`、
+  `hatched/*/build|qa/`、用户偏好
+- 提交历史（概要）：
   1. `49ea981` 角色系统（Canvas Q 版少女 + 台词包 + 菜单上方弹出）
   2. `d6ebbf8` 高清图片精灵模式（构建管线 + 运行时播放器）
   3. `3af9822` 气泡独立对话区
-  4. `f96e8ac`（pixel-art）像素版精灵
-  5. `41b3fcb` 角色添加接口（CLI + 网页）
-  6. AGENTS.md（本文档）
+  4. `41b3fcb` 角色添加接口（CLI + 网页）
+  5. `8d4cdf6`（main）落地高度自适应：脚底对齐工作区底边
+  6. （hatch-pet）hatch-pet 图集桌宠：生成管线 + 播放器
 
 ## 7. 后续方向（未做）
 
-- 真·多姿势：Stable Diffusion + ControlNet(OpenPose) + 角色一致性
-  （IP-Adapter / reference-only）；动漫角色一致性较好，真人会漂移。
+- 真·多姿势/更强一致性：给 hatch 管线接支持参考图的生图（image editing /
+  IP-Adapter），消除行间漂移；动漫形象一致性较好，真人会漂移。
 - 逐像素透明窗口：换 PySide6（`WA_TranslucentBackground`）或 ctypes
   UpdateLayeredWindow（可零运行时依赖但气泡文字需自绘合成）。
-- 真人像素化：`python tools/build_pixel_sprites.py --all`（管线已支持，
-  默认只建 6 位动漫角色）。
+- hatch 行的深度利用：waiting（等人）接"有话对你说"、running（专注
+  干活）接工作状态等，让桌宠状态语义更丰富。

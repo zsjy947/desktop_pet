@@ -18,6 +18,7 @@ from . import config as C
 from . import custom
 from . import drawutil
 from . import girl_sprites
+from . import hatch_sprites
 from . import photo_sprites
 from . import screens
 from . import sprites
@@ -91,7 +92,7 @@ class PetApp:
         self.root = tk.Tk()
 
         # 当前角色：从用户目录的偏好文件恢复；图片精灵角色窗口更大
-        self.registry = custom.registry()
+        self.registry = self._registry()
         self.char_id = load_pref() or 'cat'
         self.char = self.registry.get(self.char_id, self.registry['cat'])
         self._char_var = tk.StringVar(value=self.char_id)
@@ -169,8 +170,18 @@ class PetApp:
         ls = tkfont.Font(root=self.root, font=C.FONT).metrics('linespace')
         return int(3 * ls + 24 * k + 6)
 
+    def _registry(self):
+        """完整角色表：内置 + 自定义图片角色 + hatch-pet 图集桌宠。"""
+        reg = custom.registry()
+        for pid, preset in hatch_sprites.registry().items():
+            if pid not in reg:
+                reg[pid] = preset
+        return reg
+
     def _size_for(self, char):
-        """角色的窗口边长：图片精灵角色用构建时的更大窗口。"""
+        """角色的窗口边长：图片精灵/图集桌宠用构建时的更大窗口。"""
+        if char.get('kind') == 'hatch' and char.get('photo'):
+            return hatch_sprites.window_size(char['photo'])
         if (char.get('kind') == 'girl' and char.get('photo')
                 and photo_sprites.has_assets(char['photo'])):
             return photo_sprites.window_size(char['photo'])
@@ -179,6 +190,9 @@ class PetApp:
     def _use_photo(self, char):
         return (char.get('kind') == 'girl' and bool(char.get('photo'))
                 and photo_sprites.has_assets(char['photo']))
+
+    def _use_hatch(self, char):
+        return char.get('kind') == 'hatch' and bool(char.get('photo'))
 
     def _init_position(self):
         """出生在主屏右下角（窗口底边=脚底，落在工作区底边=任务栏上沿）。"""
@@ -275,12 +289,13 @@ class PetApp:
         menu.add_separator()
         menu.add_radiobutton(label='🐱 橘猫', variable=self._char_var,
                              value='cat', command=self._switch_character)
-        # 每次打开菜单刷新自定义角色（上传网页新增的角色即时可见）
-        self.registry = custom.registry()
+        # 每次打开菜单刷新角色表（上传网页新增 / hatch 出的新角色即时可见）
+        self.registry = self._registry()
         for preset in self.registry.values():
-            if preset['kind'] != 'girl':
+            if preset['kind'] not in ('girl', 'hatch'):
                 continue
-            menu.add_radiobutton(label=f'🧚 {preset["name"]}',
+            emoji = '🧚' if preset['kind'] == 'girl' else '🐣'
+            menu.add_radiobutton(label=f'{emoji} {preset["name"]}',
                                  variable=self._char_var, value=preset['id'],
                                  command=self._switch_character)
         menu.add_separator()
@@ -476,6 +491,11 @@ class PetApp:
                                particles=self.particles)
         elif self._use_photo(self.char):
             photo_sprites.draw_frame(self.cv, char=self.char, state=b.state,
+                                     t=t, facing=b.facing,
+                                     bubble_text='',
+                                     particles=self.particles)
+        elif self._use_hatch(self.char):
+            hatch_sprites.draw_frame(self.cv, char=self.char, state=b.state,
                                      t=t, facing=b.facing,
                                      bubble_text='',
                                      particles=self.particles)
