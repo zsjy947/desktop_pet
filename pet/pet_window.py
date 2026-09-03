@@ -106,9 +106,10 @@ class PetApp:
         self.min_x = self.virtual.x
         self.max_x = self.virtual.x + self.virtual.w - size
 
-        self._init_position()
         # 窗口在宠物区上方加高出一截“对话区”：气泡画在那里，不再遮挡人物
+        # （需先于出生点计算：地面按“窗口底边=脚底”对齐工作区，要用窗口总高）
         self._bubble_extra = self._bubble_area_height()
+        self._init_position()
         self.root.geometry(
             f'{size}x{size + self._bubble_extra}+{int(self.x)}+{int(self.y)}')
         self.root.overrideredirect(True)                    # 无边框
@@ -180,18 +181,23 @@ class PetApp:
                 and photo_sprites.has_assets(char['photo']))
 
     def _init_position(self):
-        """出生在主屏右下角（任务栏上方）。"""
+        """出生在主屏右下角（窗口底边=脚底，落在工作区底边=任务栏上沿）。"""
         p = screens.primary(self.monitors)
         self.x = min(p.x + p.w - self.size - 40, self.max_x)
-        self.y = p.y + p.h - self.size
+        self.y = p.wy + p.wh - self.size - self._bubble_extra
 
     def ground_y_at(self, x, y):
-        """脚底所在位置 (x, y) 处的地面高度（所属显示器的底边）。"""
+        """脚底所在位置 (x, y) 处的地面（窗口顶边应对齐到的 y）。
+
+        地面取所属显示器的工作区（扣掉任务栏等 appbar）底边，且对齐的是
+        窗口底边：宠物脚底正好站在任务栏上沿。任务栏高度、DPI 缩放、
+        对话区加高有多少都自适应，不会落到屏幕外。
+        """
         cx = x + self.size / 2
         m = screens.at(self.monitors, cx, y + self.size / 2)
         if m is None:
             m = screens.at_x(self.monitors, cx)
-        return m.y + m.h - self.size
+        return m.wy + m.wh - (self.size + self._bubble_extra)
 
     @property
     def ground_y(self):
@@ -244,9 +250,13 @@ class PetApp:
     def _on_release(self, event):
         if self.behavior.state != 'drag':
             return
-        on_ground = self.y >= self.ground_y
-        self.behavior.release_drag(on_ground)
-        if not on_ground:
+        if self.y >= self.ground_y:
+            # 落到地面或更低（比如拖进了任务栏区域）：贴回地面站好，
+            # 不让宠物留在屏幕外/被任务栏挡住
+            self.y = self.ground_y
+            self.behavior.release_drag(True)
+        else:
+            self.behavior.release_drag(False)
             self.vy = 0.0
 
     def _on_double_click(self, event):

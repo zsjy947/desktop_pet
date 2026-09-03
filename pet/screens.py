@@ -8,8 +8,15 @@ Windows 下通过 EnumDisplayMonitors 获取所有显示器的真实坐标
 import sys
 from collections import namedtuple
 
-# x/y 为左上角坐标，w/h 为宽高
-Monitor = namedtuple('Monitor', ['x', 'y', 'w', 'h'])
+# x/y 为左上角坐标，w/h 为宽高；wx/wy/ww/wh 为工作区（扣掉任务栏等
+# appbar 后可供落脚的区域），未提供时视同整屏（回落到旧的整屏落地行为）
+class Monitor(namedtuple('Monitor',
+                         ['x', 'y', 'w', 'h', 'wx', 'wy', 'ww', 'wh'])):
+    def __new__(cls, x, y, w, h, wx=None, wy=None, ww=None, wh=None):
+        return super().__new__(
+            cls, x, y, w, h,
+            x if wx is None else wx, y if wy is None else wy,
+            w if ww is None else ww, h if wh is None else wh)
 
 
 def get_monitors(fallback_size):
@@ -29,13 +36,28 @@ def _windows_monitors():
     import ctypes.wintypes as wt
 
     user32 = ctypes.windll.user32
+
+    class MONITORINFO(ctypes.Structure):
+        _fields_ = [('cbSize', wt.DWORD), ('rcMonitor', wt.RECT),
+                    ('rcWork', wt.RECT), ('dwFlags', wt.DWORD)]
+
     mons = []
     proto = ctypes.WINFUNCTYPE(wt.BOOL, wt.HMONITOR, wt.HDC,
                                ctypes.POINTER(wt.RECT), wt.LPARAM)
 
-    def on_monitor(_hmon, _hdc, rect, _param):
+    def on_monitor(hmon, _hdc, rect, _param):
         r = rect.contents
-        mons.append(Monitor(r.left, r.top, r.right - r.left, r.bottom - r.top))
+        x, y, w, h = r.left, r.top, r.right - r.left, r.bottom - r.top
+        wx, wy, ww, wh = x, y, w, h
+        try:
+            mi = MONITORINFO()
+            mi.cbSize = ctypes.sizeof(MONITORINFO)
+            if user32.GetMonitorInfoW(hmon, ctypes.byref(mi)):
+                wx, wy = mi.rcWork.left, mi.rcWork.top
+                ww, wh = mi.rcWork.right - wx, mi.rcWork.bottom - wy
+        except Exception:
+            pass    # 拿不到工作区就按整屏处理
+        mons.append(Monitor(x, y, w, h, wx, wy, ww, wh))
         return True
 
     user32.EnumDisplayMonitors(None, None, proto(on_monitor), 0)

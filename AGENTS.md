@@ -28,7 +28,7 @@ tools/
   build_pixel_sprites.py   像素版构建（64px 量化+剪切段走路，pixel-art 分支）
   add_character.py         角色添加接口（CLI / 可编程）
   character_server.py      本地上传网页 http://127.0.0.1:8765
-tests/test_smoke.py        15 项冒烟测试（会短暂弹窗）
+tests/test_smoke.py        17 项冒烟测试（会短暂弹窗）
 assets/                    高清精灵帧（入库，~8.7MB）
 assets_pixel/              像素精灵帧（pixel-art 分支，~739KB）
 reference/pictures/        用户提供的参考图（**不入库**）
@@ -54,7 +54,7 @@ custom_characters.json     接口生成的自定义角色（**不入库**）
      https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-anime.onnx
    ```
    模型选择：真人照片 `u2net`，动漫插画 `isnet-anime`。
-5. 测试：`python -m unittest tests.test_smoke -v`（15 项；弹一下测试窗口属正常）。
+5. 测试：`python -m unittest tests.test_smoke -v`（17 项；弹一下测试窗口属正常）。
 
 ## 3. 构建与角色流程
 
@@ -101,6 +101,16 @@ custom_characters.json     接口生成的自定义角色（**不入库**）
 **对话气泡**
 - 气泡画在窗口顶部独立加高的对话区画布（`cv_bubble`），尾巴指向下方
   宠物，**永不遮挡人物**；菜单锚定在窗口顶边之上，避免盖住气泡区。
+
+**落地高度（跨机器自适应）**
+- 气泡改造后窗口 = 对话区 + 宠物区，**脚底在窗口底边**。地面必须取
+  显示器**工作区**（`GetMonitorInfoW` 的 rcWork，`EnumDisplayMonitors`
+  只给整屏矩形）底边，并把窗口底边对齐过去：`地面 = 工作区底边 -
+  (size + 对话区高)`。曾按"窗口顶 = 整屏底 - size"落位，脚底沉到屏幕外
+  约一个对话区高度（125% DPI 下 111px，整只掉出屏幕）；低分屏沉得少看
+  不出来，换台电脑就露馅——落地必须按工作区自适应，不能写死。
+- 拖进任务栏区域（地面以下）松手要在 `_on_release` 里贴回地面站好，
+  不能让宠物留在屏幕外/被任务栏挡住。
 
 **角色对号**
 - 批量看参考图会把照片和人对错号（毛晓彤/王玉雯踩过）：核对时必须用

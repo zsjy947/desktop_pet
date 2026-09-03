@@ -126,12 +126,35 @@ class SmokeTest(unittest.TestCase):
         self.assertIsNotNone(screens.at(mons, v.x + v.w // 2, v.y + v.h // 2))
         self.assertIn(screens.at_x(mons, v.x), mons)
 
-        # 地面应落在虚拟桌面底边之上，窗口初始位置应在虚拟桌面内
+        # 地面（窗口顶边）使窗口底边=脚底正好贴住所属显示器工作区底边，
+        # 且不越过显示器底边（回归：气泡对话区加高后脚底曾被顶出屏幕外）
         app = self.app
-        self.assertLessEqual(app.ground_y, v.y + v.h)
+        m = screens.at(app.monitors, app.x + app.size / 2,
+                       app.y + app.size / 2) or screens.primary(app.monitors)
+        self.assertEqual(app.ground_y + app.size + app._bubble_extra,
+                         m.wy + m.wh)
+        self.assertLessEqual(m.wy + m.wh, m.y + m.h)
+        self.assertLessEqual(app.y + app.size + app._bubble_extra, m.y + m.h)
         self.assertGreaterEqual(app.ground_y, v.y)
         self.assertGreaterEqual(app.min_x, v.x)
         self.assertLessEqual(app.max_x, v.x + v.w)
+
+    def test_monitor_work_area_fallback(self):
+        """工作区信息缺失时视同整屏（回落为旧的整屏落地行为）。"""
+        from pet import screens
+        m = screens.Monitor(10, 20, 300, 200)
+        self.assertEqual((m.wx, m.wy, m.ww, m.wh), (10, 20, 300, 200))
+        m2 = screens.Monitor(0, 0, 1920, 1080, 0, 0, 1920, 1030)
+        self.assertEqual(m2.wy + m2.wh, 1030)
+
+    def test_drop_below_ground_snaps_back(self):
+        """拖到地面以下（如任务栏区域）松手：贴回地面站好，不留在屏幕外。"""
+        app = self.app
+        app.behavior.start_drag()
+        app.y = app.ground_y + 30
+        app._on_release(None)
+        self.assertEqual(app.behavior.state, 'idle')
+        self.assertEqual(app.y, app.ground_y)
 
     def test_characters_library(self):
         """角色库：橘猫 + 12 个参考图少女，台词类别齐全。"""
