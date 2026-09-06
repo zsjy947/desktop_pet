@@ -24,3 +24,9 @@ custom_characters.json
 # hatch-pet 生成管线中间产物（只入库 hatched/<id>/{pet.json,spritesheet.png}）
 hatched/*/build/
 hatched/*/qa/
+
+# 本地生图评估产物（生成图 / 对比拼图 / 日志 / REPORT.md）
+localgen/
+
+# 用户提供的参考图（不入库）
+reference/

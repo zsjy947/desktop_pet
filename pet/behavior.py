@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 """行为状态机：管理宠物的状态切换与朝向。
 
-状态流转：
-    idle --(随机)--> walk --> idle
-    idle/walk --(菜单/深夜)--> sleep --(点击/菜单)--> idle
-    任意 --(按下拖拽)--> drag --(松手且悬空)--> fall --(落地)--> idle
-    idle/walk --(喂食/摸头)--> happy --> idle
-"""
+    状态流转：
+        idle --(随机)--> walk --> idle
+        idle/walk --(菜单/深夜)--> sleep --(点击/菜单)--> idle
+        任意 --(按下拖拽)--> drag --(松手且悬空)--> fall --(落地)--> idle
+        idle/walk --(喂食/摸头/打招呼)--> happy --> idle
+        idle/walk --(送礼物)--> excited（开心跳）--> idle
+    """
 import random
 import time
 
@@ -31,8 +32,10 @@ class Behavior:
 
     # ---------- 每帧推进 ----------
     def update(self):
-        """推进状态机：happy 到期回落 idle；空闲/走路按计时器随机切换。"""
-        if self.state == 'happy' and time.monotonic() >= self.state_until:
+        """推进状态机：happy/excited 到期回落 idle；空闲/走路按计时器
+        随机切换。"""
+        if (self.state in ('happy', 'excited')
+                and time.monotonic() >= self.state_until):
             self._idle()
         if self.state in ('idle', 'walk') and time.monotonic() >= self.state_until:
             if self.state == 'idle' and random.random() < 0.65:
@@ -61,6 +64,11 @@ class Behavior:
 
     def happy(self):
         self.state = 'happy'
+        self.state_until = time.monotonic() + 2.2
+
+    def excited(self):
+        """强正反馈（送礼物等）：开心到跳起来，播图集跳跃行。"""
+        self.state = 'excited'
         self.state_until = time.monotonic() + 2.2
 
     def start_drag(self):

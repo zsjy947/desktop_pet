@@ -74,17 +74,24 @@ def save_pref(char_id):
         pass
 
 
-def menu_origin(pet_x, window_top_y, size, monitor, n_items, n_seps):
-    """右键菜单弹出位置：菜单底边贴在窗口顶边（对话气泡区）上方，
-    完全不遮挡宠物与气泡。monitor 用于把菜单夹回屏幕内。
-    返回菜单左上角应出现的位置 (x, y)。
+def menu_origin(pet_x, window_top_y, size, monitor, n_items, n_seps,
+                bubble_h=0):
+    """右键菜单弹出位置：菜单底边压住对话区、并微微盖住宠物头顶
+    （菜单离角色近；overlap 取 15% 宠物边长）。monitor 用于把菜单
+    夹回屏幕内。返回菜单左上角应出现的位置 (x, y)。
     """
     est = n_items * _MENU_ITEM_H + n_seps * _MENU_SEP_H + _MENU_PAD
     x = pet_x + size / 2 - 70
     x = min(max(x, monitor.x + 2), monitor.x + monitor.w - 150)
-    y = window_top_y - est - 4
+    bottom = window_top_y + bubble_h + int(size * 0.15)
+    y = bottom - est
     y = max(y, monitor.y + 2)     # 屏幕上方放不下时至少贴住顶边
     return int(x), int(y)
+
+
+def _draw_state(state):
+    """excited（开心跳）只有图集有跳跃行，照片/Canvas 精灵回落 happy。"""
+    return 'happy' if state == 'excited' else state
 
 
 class PetApp:
@@ -165,16 +172,27 @@ class PetApp:
 
     # ---------------- 位置与屏幕 ----------------
     def _bubble_area_height(self, size=None):
-        """窗口顶部对话区高度：按台词字体行高预留三行 + 气泡尾巴。"""
+        """窗口顶部对话区高度：两行台词的矩形气泡，贴住头顶不加尾巴。"""
         k = (size or self.size) / 160
         ls = tkfont.Font(root=self.root, font=C.FONT).metrics('linespace')
-        return int(3 * ls + 24 * k + 6)
+        return int(2 * ls + 12 * k + 8)
 
     def _registry(self):
-        """完整角色表：内置 + 自定义图片角色 + hatch-pet 图集桌宠。"""
+        """完整角色表：内置 + 自定义图片角色 + hatch-pet 图集桌宠。
+
+        图集与旧角色同 id 时视为**图片替换**：渲染走图集（kind=hatch），
+        名字与台词沿用旧角色的（本地生图升级形象，人设不丢）。
+        """
         reg = custom.registry()
         for pid, preset in hatch_sprites.registry().items():
-            if pid not in reg:
+            old = reg.get(pid)
+            if old:
+                merged = dict(preset)
+                merged['name'] = old.get('name') or preset['name']
+                if old.get('phrases'):
+                    merged['phrases'] = old['phrases']
+                reg[pid] = merged
+            else:
                 reg[pid] = preset
         return reg
 
@@ -274,18 +292,25 @@ class PetApp:
             self.vy = 0.0
 
     def _on_double_click(self, event):
-        self._pet()
+        if self._is_cat():
+            self._pet()
+        else:
+            self._greet()
 
     def _on_menu(self, event):
         """右键菜单：弹在宠物上方（底边贴住头顶），不遮挡宠物。"""
         if self._menu_open:
             return
         menu = tk.Menu(self.root, tearoff=0)
-        menu.add_command(label='🍪 喂食', command=self._feed)
-        menu.add_command(label='🖐 摸摸头', command=self._pet)
-        sleep_label = '☀ 叫醒' if self.behavior.state == 'sleep' else '😴 让它打盹'
+        if self._is_cat():
+            menu.add_command(label='🍪 喂食', command=self._feed)
+            menu.add_command(label='🖐 摸摸头', command=self._pet)
+        else:
+            menu.add_command(label='👋 打个招呼', command=self._greet)
+            menu.add_command(label='🎁 送个礼物', command=self._gift)
+        sleep_label = '☀ 叫醒' if self.behavior.state == 'sleep' else '😴 打个盹'
         menu.add_command(label=sleep_label, command=self._toggle_sleep)
-        menu.add_command(label='💬 说句话', command=self._chat)
+        menu.add_command(label='💬 聊聊天', command=self._chat)
         menu.add_separator()
         menu.add_radiobutton(label='🐱 橘猫', variable=self._char_var,
                              value='cat', command=self._switch_character)
@@ -306,7 +331,8 @@ class PetApp:
                      if menu.type(i) == 'separator')
         m = screens.at(self.monitors, self.x + self.size / 2,
                        self.y + self.size / 2) or self.virtual
-        mx, my = menu_origin(self.x, self.y, self.size, m, n_items, n_seps)
+        mx, my = menu_origin(self.x, self.y, self.size, m, n_items, n_seps,
+                             self._bubble_extra)
 
         # 菜单显示期间原地站好，菜单就会一直悬在宠物头顶
         self.behavior.pause()
@@ -359,6 +385,11 @@ class PetApp:
         self._say(random.choice(self._p('switch')))
 
     # ---------------- 菜单动作 ----------------
+    def _is_cat(self):
+        """猫科（橘猫 / 芒果等）用喂食摸头，人类角色用打招呼送礼物。"""
+        c = self.char
+        return c.get('kind') == 'cat' or c.get('species') == 'cat'
+
     def _feed(self):
         if self.behavior.state == 'sleep':
             self.behavior.wake()
@@ -372,6 +403,21 @@ class PetApp:
         self.behavior.happy()
         self._spawn_hearts(5)
         self._say(random.choice(self._p('pet')))
+
+    def _greet(self):
+        """打招呼：挥手 + 角色的出场台词。"""
+        if self.behavior.state == 'sleep':
+            self.behavior.wake()
+        self.behavior.happy()
+        self._say(random.choice(self._p('switch')))
+
+    def _gift(self):
+        """送礼物：开心到跳起来 + 爱心雨 + 收礼台词（原喂食台词包）。"""
+        if self.behavior.state == 'sleep':
+            self.behavior.wake()
+        self.behavior.excited()
+        self._spawn_hearts(10)
+        self._say(random.choice(self._p('feed')))
 
     def _toggle_sleep(self):
         if self.behavior.state == 'sleep':
@@ -490,7 +536,8 @@ class PetApp:
                                bubble_text='',
                                particles=self.particles)
         elif self._use_photo(self.char):
-            photo_sprites.draw_frame(self.cv, char=self.char, state=b.state,
+            photo_sprites.draw_frame(self.cv, char=self.char,
+                                     state=_draw_state(b.state),
                                      t=t, facing=b.facing,
                                      bubble_text='',
                                      particles=self.particles)
@@ -500,7 +547,8 @@ class PetApp:
                                      bubble_text='',
                                      particles=self.particles)
         else:
-            girl_sprites.draw_frame(self.cv, char=self.char, state=b.state,
+            girl_sprites.draw_frame(self.cv, char=self.char,
+                                    state=_draw_state(b.state),
                                     t=t, facing=b.facing,
                                     bubble_text='',
                                     particles=self.particles)

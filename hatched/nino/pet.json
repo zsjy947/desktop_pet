@@ -1,0 +1,16 @@
+{
+ "id": "nino",
+ "displayName": "中野二乃",
+ "description": "中野二乃（NoobAI 同种子连贯重制 + 睡觉行 + 去白边/空腔）",
+ "spritesheetPath": "spritesheet.png",
+ "window": 208,
+ "available_rows": [
+  0,
+  1,
+  2,
+  3,
+  4,
+  6
+ ],
+ "sleep_row": 6
+}

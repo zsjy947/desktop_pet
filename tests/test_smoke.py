@@ -157,10 +157,12 @@ class SmokeTest(unittest.TestCase):
         self.assertEqual(app.y, app.ground_y)
 
     def test_characters_library(self):
-        """角色库：橘猫 + 12 个参考图少女，台词类别齐全。"""
+        """角色库：橘猫 + 6 个二次元少女（三次元明星已移除），台词类别齐全。"""
         self.assertEqual(characters.CAT['kind'], 'cat')
         girls = [p for p in characters.CHARACTERS.values() if p['kind'] == 'girl']
-        self.assertEqual(len(girls), 12)
+        self.assertEqual(len(girls), 5)
+        self.assertEqual({p['id'] for p in girls},
+                         {'nino', 'lillie', 'dawn', 'cynthia', 'lusamine'})
         for preset in characters.CHARACTERS.values():
             for key in ('talk', 'feed', 'pet', 'sleep', 'wake', 'drop',
                         'switch'):
@@ -213,19 +215,25 @@ class SmokeTest(unittest.TestCase):
         self.assertIsNotNone(old_name)
 
     def test_menu_origin_above_pet(self):
-        """菜单弹出位置：底边贴在窗口顶边（对话区）上方，且夹回屏幕内。"""
+        """菜单弹出位置：底边压住对话区并微盖宠物头顶（15% 边长），
+        且夹回屏幕内。"""
         from pet import screens
         m = screens.Monitor(0, 0, 1920, 1080)
         pet_x, window_top, size = 500, 760, 240
         n_items, n_seps = 18, 2
+        bubble_h = 74
         x, y = pet_window.menu_origin(pet_x, window_top, size, m,
-                                      n_items, n_seps)
-        est = n_items * pet_window._MENU_ITEM_H + n_seps * pet_window._MENU_SEP_H
-        self.assertLessEqual(y + est, window_top - 4, '菜单不应遮挡窗口内容')
+                                      n_items, n_seps, bubble_h)
+        est = (n_items * pet_window._MENU_ITEM_H
+               + n_seps * pet_window._MENU_SEP_H + pet_window._MENU_PAD)
+        self.assertEqual(y + est,
+                         window_top + bubble_h + int(size * 0.15),
+                         '菜单底边应压住对话区并微盖宠物头顶')
         self.assertGreaterEqual(x, m.x)
         self.assertLessEqual(x, m.x + m.w - 150)
         # 窗口已经很靠上时，菜单最多贴住屏幕顶边
-        _, y2 = pet_window.menu_origin(500, 10, size, m, n_items, n_seps)
+        _, y2 = pet_window.menu_origin(500, 10, size, m, n_items, n_seps,
+                                       bubble_h)
         self.assertGreaterEqual(y2, m.y + 2)
 
     def test_bubble_drawn_in_dedicated_area(self):
@@ -249,11 +257,15 @@ class SmokeTest(unittest.TestCase):
         """图片精灵角色：切换后窗口变大、播帧渲染正常，切回后恢复。"""
         from pet import photo_sprites
         app = self.app
-        if not photo_sprites.has_assets('nino'):
-            self.skipTest('assets 未构建（先运行 tools/build_sprites.py）')
+        # 挑一个未被 hatch 图集替换的照片角色（同 id 图集会覆盖照片精灵）
+        pid = next((p['photo'] for p in app._registry().values()
+                    if p['kind'] == 'girl' and p.get('photo')
+                    and photo_sprites.has_assets(p['photo'])), None)
+        if not pid:
+            self.skipTest('没有未被图集替换的照片角色（全部已升级为图集）')
 
-        self.assertEqual(photo_sprites.window_size('nino'), 240)
-        app._char_var.set('nino')
+        self.assertEqual(photo_sprites.window_size(pid), 240)
+        app._char_var.set(pid)
         app._switch_character()
         self.pump(4)
         self.assertEqual(app.size, 240)

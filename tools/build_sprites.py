@@ -32,19 +32,13 @@ TARGET_H = 208           # 精灵目标高度
 MAX_W = 232              # 精灵最大宽度
 
 # 参考图 -> (角色id, 抠图模型)；动漫插画用 isnet-anime，真人照片用 u2net
+# 三次元明星角色已按需求移除（本地生图写实度不满意，等新方法后再回加）
 CHARACTERS = [
     ('中野二乃.jpg',   'nino',     'isnet-anime'),
     ('莉莉艾.jpg',     'lillie',   'isnet-anime'),
     ('小光.jpg',       'dawn',     'isnet-anime'),
-    ('由比滨结衣.jpg', 'yui',      'isnet-anime'),
     ('竹兰.jpg',       'cynthia',  'isnet-anime'),
     ('露莎米奈.jpg',   'lusamine', 'isnet-anime'),
-    ('关晓彤.jpg',     'guan',     'u2net'),
-    ('戚薇.jpg',       'qiwei',    'u2net'),
-    ('毛晓彤.jpg',     'mao',      'u2net'),
-    ('王玉雯.jpg',     'wang',     'u2net'),
-    ('赵今麦.jpg',     'zhao',     'u2net'),
-    ('陈都灵.jpg',     'chen',     'u2net'),
 ]
 
 

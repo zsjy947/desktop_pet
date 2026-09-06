@@ -32,9 +32,10 @@ NOSE = '#E0806F'         # 鼻子
 BLUSH = '#F7B2A0'        # 脸颊红晕
 HEART = '#FF6B81'        # 爱心粒子
 HEART_FADED = '#FFB9C4'
-BUBBLE_BG = '#FFFFFF'    # 气泡
-BUBBLE_EDGE = '#D9C9B8'
-BUBBLE_FG = '#44372A'
+BUBBLE_BG = '#D6EAF8'    # 气泡底（更浅的蓝，配 stipple 半透明）
+BUBBLE_EDGE = '#5DADE2'  # 气泡边框（浅蓝）
+BUBBLE_FG = '#17324D'    # 气泡文字（深蓝黑，浅底上清晰）
+BUBBLE_STIPPLE = 'gray75'  # 兜底镂空；主用 drawutil 的 87.5% 自定义位图
 
 FONT = ('Microsoft YaHei UI', 10)
 

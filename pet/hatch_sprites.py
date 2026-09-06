@@ -117,7 +117,9 @@ def preset(meta):
             phrases[k] = [str(s) for s in v if str(s).strip()]
     return {'id': meta['id'],
             'name': str(meta.get('displayName') or meta['id']),
-            'kind': 'hatch', 'photo': meta['id'], 'phrases': phrases}
+            'kind': 'hatch', 'photo': meta['id'],
+            'species': str(meta.get('species') or 'human'),
+            'phrases': phrases}
 
 
 def registry():
@@ -135,6 +137,8 @@ def _row_for(state, facing):
     if state == 'happy':
         return 3
     if state in ('fall', 'drag'):
+        return 4
+    if state == 'excited':          # 开心跳（送礼物）：也用跳跃行
         return 4
     return 0
 
@@ -188,7 +192,13 @@ def draw_frame(cv, *, char, state, t, facing, bubble_text, particles):
     available = _meta(pid).get('available_rows')
     row = _row_for(state, facing)
     if state == 'sleep':
-        row, idx = 0, 0
+        # 睡觉：pet.json 带 sleep_row 时播睡觉姿势行，否则 idle 第 0 帧定格
+        sleep_row = _meta(pid).get('sleep_row')
+        if sleep_row is not None and (available is None
+                                      or sleep_row in available):
+            row, idx = sleep_row, _phase(sleep_row, t)
+        else:
+            row, idx = 0, 0
     elif available is not None and row not in available:
         row, idx = 0, 0          # 缺行回落 idle
     else:
@@ -201,6 +211,8 @@ def draw_frame(cv, *, char, state, t, facing, bubble_text, particles):
         dy = -abs(math.sin(t * 7.0)) * 6
     elif state == 'walk':                         # 走路上下颠
         dy = -abs(math.sin(t * 9.0)) * 1.5
+    elif state in ('idle', 'sleep'):              # 呼吸微动（帧已全同，运行时补活感）
+        dy = -abs(math.sin(t * 2.0)) * 1.0
 
     cv.create_image(size / 2, size / 2 + dy, image=ph)
     draw_particles(cv, particles)

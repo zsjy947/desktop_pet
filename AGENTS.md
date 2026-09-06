@@ -7,7 +7,28 @@
 
 Python 标准库（tkinter）桌面宠物，运行时**零第三方依赖**；图片精灵的
 生成在开发期完成（pillow + rembg）。多显示器漫游、置顶（不被任务栏
-遮挡）、右键菜单弹出在宠物上方、13+ 个可切换角色（各有独立台词）。
+遮挡）、右键菜单弹出在宠物头顶（可微盖）。角色为二次元向，当前
+7 个：橘猫 + 图集少女×4（二乃/莉莉艾/小光/露莎米奈，NoobAI 本地
+生成）+ 芒果图集猫 + 竹兰照片精灵。三次元明星 6 位已按需求移除
+（2026-09-05）；由比滨结衣也整个移除（和服版 3 次生成都没命中粉色
+和服锚点，按规则跳过，后续可加 (pink kimono:1.3) 类强色锚重试）；
+竹兰的图集版未命中锚点（大衣穿身 vs 披肩）已删、回退照片精灵。
+图集与旧角色同 id 时图集**替换**旧角色（渲染走图集、名字台词沿用旧
+preset，见 pet_window._registry）。
+**绿幕流程（浅色服装角色必用）**：白底+空腔色距判罚会把白裙/白帽
+当成"封闭浅色空腔"大面积抠掉（莉莉艾首版白裙全没），色距法对白色系
+设计不成立。改为生图直接出**纯绿幕底**（prompt: solid bright green
+background, flat chroma key green screen），键控天然区分角色与背景，
+腿间封闭绿块按色直接扣。remove_bg 加 snap 吸附参数（绿幕标定 80：
+先把你色距在 snap 内的像素归一化到背景色再键控，抗背景渐变/条带；
+白底流程不要开）。atlas 用 `--snap 80 --erode 3`（erode 3 切绿边）。
+注意 atlas 单行重跑必须传全行清单，否则其余行会被清空。
+交互按物种分：人类角色 = 👋打招呼（waving 行）/ 🎁送礼物（excited
+状态→图集跳跃行 + 爱心）/ 💬聊聊天；猫科（橘猫/芒果，pet.json 加
+"species":"cat"）保留 🍪喂食 / 🖐摸摸头。双击同理（人=打招呼，猫=摸
+头）。气泡为矩形浅蓝半透明方框（边框 #5DADE2、底 #D6EAF8 走
+pet/glass.xbm 87.5% 镂空露出键色=真透桌面），无尾巴箭头，对话区压
+矮到两行贴住头顶。
 
 ```
 main.py                    入口（Windows DPI 感知）
@@ -21,18 +42,20 @@ pet/
   girl_sprites.py          Q 版少女参数化绘制（图片帧缺失时的回落）
   photo_sprites.py         图片精灵播放器（assets/ 帧目录）
   hatch_sprites.py         hatch-pet 图集桌宠播放器（hatched/ 图集包）
-  behavior.py              状态机 idle/walk/sleep/drag/fall/happy
+  behavior.py              状态机 idle/walk/sleep/drag/fall/happy/excited
   screens.py               EnumDisplayMonitors + 工作区（GetMonitorInfoW）
   pet_window.py            主窗口：透明置顶、右键菜单、角色切换、主循环
 tools/
   build_sprites.py         高清精灵构建（抠图→清理→伪姿势帧，240px）
   hatch_pet.py             hatch-pet 生成管线（z-image-turbo 生姿势→图集）
+  comfy_hatch.py           本地 ComfyUI 生图后端（gen 单张 / atlas 图集组装）
   add_character.py         角色添加接口（CLI / 可编程）
   character_server.py      本地上传网页 http://127.0.0.1:8765
 tests/test_smoke.py        19 项冒烟测试（会短暂弹窗）
-assets/                    高清精灵帧（入库，~8.7MB）
+assets/                    高清精灵帧（入库，5 个动漫角色；三次元与 yui 已移除）
 hatched/<id>/              图集桌宠包：pet.json + spritesheet.png（入库）；
                            build/ 与 qa/ 为生成中间产物（不入库）
+localgen/                  本地生图评估产物与报告（REPORT.md，**不入库**）
 reference/pictures/        用户提供的参考图（**不入库**）
 custom_characters.json     接口生成的自定义角色（**不入库**）
 ~/.desktop_pet.json        用户上次选择的角色（运行时写入）
@@ -77,9 +100,22 @@ custom_characters.json     接口生成的自定义角色（**不入库**）
   缩放（防帧间大小跳）→合成图集→契约校验→QA 联络表/GIF→打包
   `hatched/<id>/`。重跑安全：build/ 下条带已存在即跳过（--force 重生）。
   运行时 pet/hatch_sprites.py 按状态映射行：idle→idle、walk→
-  running-right/left、happy→waving、fall/drag→jumping、sleep→idle
-  第 0 帧；waiting/running/review 为 Codex 应用专属行，桌宠暂不用。
+  running-right/left、happy→waving、fall/drag/excited→jumping、
+  sleep→sleep_row（pet.json 指定，如第 6 行；未指定回落 idle 第 0
+  帧）；waiting/running/review 为 Codex 应用专属行，桌宠暂不用。
   `--import-atlas x.webp` 可导入 Codex 孵化的现成图集。
+- **本地生图替换（2026-09-05）**：`tools/comfy_hatch.py` 把生图源换成本地
+  ComfyUI（需先启动 `D:\AAA_code\python\ComfyUI\启动ComfyUI.bat`，API
+  http://127.0.0.1:8188）。`gen` 子命令出单张（`--ckpt` 选底模 /
+  `--zimage` 用 Z-Image GGUF / `--init`+`--denoise` 图生图）；
+  `atlas` 子命令以 base 图逐帧图生图组装 `hatched/<id>/`（行规格、抠底、
+  合成、QA 全复用 hatch_pet）。已上线 `nino`（白底绿幕混合）与
+  `lillie`/`dawn`/`lusamine`（绿幕流程）图集，`guan`（写实向）已随
+  三次元移除，评估与配方见 `localgen/REPORT.md`。实测**逐帧
+  图生图完胜条带**（本地模型同样不听"一行 n 帧"版式指令）；出图时间
+  与分辨率无关（权重流式是瓶颈），直接用最好质量；图生图的 latent
+  尺寸跟 init 走（先 fit 再编码，gen 已内置）；写实图背景靠 rembg
+  抠底换纯色，动漫图参考图 i2i 0.6 直接风格化（背景杂物会被甩掉）。
 - **添加角色**：
   - 网页：`python tools/character_server.py` → http://127.0.0.1:8765
   - CLI：`python tools/add_character.py --image x.png --id mychar --name 名字
@@ -101,8 +137,9 @@ custom_characters.json     接口生成的自定义角色（**不入库**）
 - `menu.tk_popup` 会阻塞直到菜单关闭，但 `after` 定时器在菜单打开期间
   **照常触发**；主循环里 `_menu_open` 为真时要跳过窗口移动/置顶压制，
   否则每帧 SetWindowPos 会把刚弹出的菜单挤掉（实测踩坑）。
-- 菜单锚定：底边贴窗口顶边（对话区）上方，高度按 26px/项估算
-  （实测 ~22px，宁大勿小——估小了菜单会沉到宠物后面被键色窗口盖住）。
+- 菜单锚定：底边压住对话区底边并**微盖宠物头顶**（15% 边长，2026-09-06
+  按用户要求从"窗顶上方"下移拉近）。高度按 26px/项估算（实测 ~22px，
+  宁大勿小——估小了菜单会沉到宠物后面被键色窗口盖住）。
 
 **精灵帧**
 - tkinter 的 PhotoImage **不能运行时翻转/旋转** → 所有镜像与姿势变换
@@ -113,8 +150,8 @@ custom_characters.json     接口生成的自定义角色（**不入库**）
   Live2D（后者与 tkinter 集成不现实）。
 
 **对话气泡**
-- 气泡画在窗口顶部独立加高的对话区画布（`cv_bubble`），尾巴指向下方
-  宠物，**永不遮挡人物**；菜单锚定在窗口顶边之上，避免盖住气泡区。
+- 气泡画在窗口顶部独立加高的对话区画布（`cv_bubble`），**永不遮挡
+  人物**；矩形无尾巴，菜单锚定压住对话区底边（可微盖宠物头顶）。
 
 **落地高度（跨机器自适应）**
 - 气泡改造后窗口 = 对话区 + 宠物区，**脚底在窗口底边**。地面必须取
@@ -137,6 +174,35 @@ custom_characters.json     接口生成的自定义角色（**不入库**）
   裁格（Python 3.12 的 `PhotoImage.copy()` 不带参数），不必拆小文件。
 - 透明像素 RGB 必须清零（与键色窗口同一硬性要求，hatch-pet 契约的
   transparency invariant 也是这条）。
+
+**UI 预览/自动化截图**
+- 外部进程驱动宠物 UI 时，驱动脚本必须自己 `SetProcessDpiAwareness(1)`
+  （main.py 的设置不随 import 生效）：tk 坐标在 125% 缩放下会被虚拟化
+  成 1/1.25，外部按物理坐标截图全部扑空。
+- 杀宠物进程别用 `taskkill /IM python.exe`——会把 ComfyUI 等一并杀掉
+  （实测踩过：图集生成中途暴毙）。按 PID 或命令行过滤杀。
+- tk_popup 菜单可在驱动进程里用假 event 直接调 `_on_menu` 打开，
+  不必模拟鼠标右键（键色透明区点击会穿透）。
+- 键色窗口上的"半透明"用 Canvas stipple（gray75）实现：镂空点露出
+  键色背景=桌面，等效 75% 不透明，无需分层窗口。
+- hatch 图集白边：源图边缘"人物与白底反锯齿混合像素"会整体保留成白
+  描边，`hatch_pet.place_row(erode=2)` 在源分辨率上腐蚀蒙版去除
+  （实测近白边界像素 89% -> 4%）。
+
+**抠图空腔与帧连贯（2026-09-06）**
+- remove_bg：2x2 块洪泛 + **封闭近背景色空腔判背景**（两腿间/臂弯被
+  人物围住的底色洪泛到不了）。阈值 0.33*tol 实测标定：真底色空腔色距
+  ~0-11，人物内部浅肤/阴影空腔 ~19-27（判错会破大腿/胸口）。
+- 帧连贯防闪烁：同一行共用种子 + 低重绘（idle 0.3/行走挥手 0.45/
+  跳 0.5），行内帧差从均值 4.17 降到 0.89；idle 全同帧，呼吸感由
+  运行时 draw_frame 的 1px 正弦微动补。
+- 睡觉姿势行：借用图集第 6 行槽位（hatch-pet 契约不变），pet.json
+  `"sleep_row": 6` + available_rows 含 6 时播睡觉姿势，否则回落
+  idle 第 0 帧定格。睡姿 base 单独 txt2img（站姿 i2i 变不出躺姿），
+  灰渐变底图生图刷不白，直接 rembg(isnet-anime) 抠出贴纯白底。
+- 气泡自定义透明度：canvas stipple 只认内建名或 "@文件" 语法，
+  BitmapImage 的 data= 在本机 Tk 解析失败、image 名也不注册为
+  bitmap——用 pet/glass.xbm（8x8 每行 1 透点=87.5%）+ "@路径"。
 
 **角色对号**
 - 批量看参考图会把照片和人对错号（毛晓彤/王玉雯踩过）：核对时必须用
@@ -171,7 +237,8 @@ custom_characters.json     接口生成的自定义角色（**不入库**）
 ## 6. Git 布局
 
 - `main`：落地高度自适应 + 气泡独立对话区 + 角色添加接口 + AGENTS.md
-- `hatch-pet`：图集桌宠（生成管线 + 播放器 + 已孵化示例「芒果」），基于 main
+- `hatch-pet`：图集桌宠（生成管线 + 播放器 + 芒果/二乃/莉莉艾/小光/
+  露莎米奈图集 + 本地 ComfyUI 生图后端 + 交互/气泡/菜单重构），基于 main
 - `pixel-art` 已废弃删除（2026-09，本地与远程均已删；像素方案用户不满意）
 - 不入库：`reference/`、`custom_characters.json`、`tmp_*`、
   `hatched/*/build|qa/`、用户偏好
@@ -182,11 +249,21 @@ custom_characters.json     接口生成的自定义角色（**不入库**）
   4. `41b3fcb` 角色添加接口（CLI + 网页）
   5. `8d4cdf6`（main）落地高度自适应：脚底对齐工作区底边
   6. （hatch-pet）hatch-pet 图集桌宠：生成管线 + 播放器
+  7. （hatch-pet）本地 ComfyUI 绿幕流程：图集替换 4 角色 + 交互重构
+     + 矩形半透明气泡 + 菜单拉近 + 去白边/空腔/防闪烁
 
 ## 7. 后续方向（未做）
 
+- 三次元（真人）路线**已暂停**：2026-09-05 按需求把 6 位明星角色从宠物
+  移除（characters.py preset + assets/ 帧 + hatched/guan 图集一起删），
+  reference/pictures 里的真人照片保留；等找到更满意的写实生图方法再回加。
+  评估数据与配方都在 localgen/REPORT.md。动漫侧：lillie/dawn/
+  lusamine 已绿幕流程上线；yui（粉色和服锚点 3 连未中）与 cynthia
+  （大衣锚点未中）暂缓，重试需强色/服装锚（如 (pink kimono:1.3)、
+  fur-trimmed coat draped on shoulders）。
 - 真·多姿势/更强一致性：给 hatch 管线接支持参考图的生图（image editing /
-  IP-Adapter），消除行间漂移；动漫形象一致性较好，真人会漂移。
+  IP-Adapter）或 ControlNet OpenPose（SD1.5 版 1.4GB，4GB 显存可跑），
+  消除行间漂移、做出真步态；动漫形象一致性较好，真人会漂移。
 - 逐像素透明窗口：换 PySide6（`WA_TranslucentBackground`）或 ctypes
   UpdateLayeredWindow（可零运行时依赖但气泡文字需自绘合成）。
 - hatch 行的深度利用：waiting（等人）接"有话对你说"、running（专注

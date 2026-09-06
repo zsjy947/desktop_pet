@@ -149,11 +149,37 @@ def zero_transparent_rgb(img):
     return Image.fromarray(arr, 'RGBA')
 
 
-def remove_bg(img, tol=42):
-    """纯色底抠图：四角均色为背景色 -> 阈值分割 -> 4x 块级洪泛。
+def erode_alpha(img, px=1):
+    """蒙版向内腐蚀 px 像素：白边的来源是源图边缘"人物与白底的反锯齿
+    混合像素"被蒙版整体保留，缩放后成白色描边；在源分辨率上把蒙版收缩
+    掉过渡带即可去除。腐蚀掉的像素 RGB 一并清零。"""
+    if px <= 0:
+        return img
+    import numpy as np
+    a = np.array(img)
+    m = (a[..., 3] > 0)
+    for _ in range(px):
+        p = np.pad(m, 1, constant_values=False)
+        m = (p[1:-1, 1:-1] & p[:-2, 1:-1] & p[2:, 1:-1]
+             & p[1:-1, :-2] & p[1:-1, 2:])
+    a[..., 3] = np.where(m, 255, 0)
+    return zero_transparent_rgb(Image.fromarray(a, 'RGBA'))
 
-    与边界连通的近似背景色区域判为背景；其余（含封闭孔洞）判为前景，
-    天然完成填洞。前景中按连通域面积再去一遍杂物。
+
+def remove_bg(img, tol=42, block=2, snap=None):
+    """纯色底抠图：四角均色为背景色 -> （可选）背景吸附 -> 阈值分割 ->
+    块级洪泛 + 空腔判罚。
+
+    1) 与边界连通的近似背景色区域 = 背景（2x 块级洪泛，细粒度防窄缝漏）；
+    2) **封闭的近背景色空腔也判背景**——两腿之间/臂弯里被人物围住的底色
+       洪泛到不了，按"成团够大且色距贴近背景"判罚扣除（衣服高光色距
+       偏大、团小，不受影响）；
+    3) 前景按连通域面积去杂物。
+
+    snap：背景吸附半径。绿幕等有色背景自带渐变/条带纹理时，先把色距
+    在 snap 内的像素归一化到背景色再键控，否则纹理会整片漏成前景。
+    白底流程不要开（白裙角色的裙子会被误吸附）。绿幕标定值 80：
+    角色主色（白裙/金发/肤色）离纯绿都 >= 150，安全。
     """
     import numpy as np
     from collections import deque
@@ -163,11 +189,16 @@ def remove_bg(img, tol=42):
     corners = np.concatenate([arr[:8, :8].reshape(-1, 3), arr[:8, -8:].reshape(-1, 3),
                               arr[-8:, :8].reshape(-1, 3), arr[-8:, -8:].reshape(-1, 3)])
     bg = corners.mean(axis=0)
-    near_bg = (np.sqrt(((arr - bg) ** 2).sum(axis=2)) < tol)
+    dist = np.sqrt(((arr - bg) ** 2).sum(axis=2))
+    if snap:
+        arr[dist < snap] = bg
+        dist = np.sqrt(((arr - bg) ** 2).sum(axis=2))
+    near_bg = (dist < tol)
 
-    # 4x 块洪泛：从边界出发的近背景块 = 背景，其余全为前景（自动填洞）
-    h4, w4 = h // 4, w // 4
-    nb4 = near_bg[:h4 * 4, :w4 * 4].reshape(h4, 4, w4, 4).all(axis=(1, 3))
+    b = block
+    h4, w4 = h // b, w // b
+    nb4 = near_bg[:h4 * b, :w4 * b].reshape(h4, b, w4, b).all(axis=(1, 3))
+    d4 = dist[:h4 * b, :w4 * b].reshape(h4, b, w4, b).mean(axis=(1, 3))
     bg4 = np.zeros((h4, w4), dtype=bool)
     dq = deque()
     for x in range(w4):
@@ -187,6 +218,35 @@ def remove_bg(img, tol=42):
             if 0 <= ny < h4 and 0 <= nx < w4 and nb4[ny, nx] and not bg4[ny, nx]:
                 bg4[ny, nx] = True
                 dq.append((ny, nx))
+
+    # 封闭空腔：洪泛没到的近背景块，成团 >=12 块且平均色距非常贴近背景的
+    # 判背景。阈值 0.33*tol 由实测标定：真底色空腔（腿缝/臂弯）色距 ~0-11，
+    # 人物内部的浅肤/阴影空腔 ~19-27（吃掉会变成大腿/胸口破洞）。
+    pocket = nb4 & ~bg4
+    labels = np.zeros((h4, w4), dtype=np.int32)
+    cur = 0
+    for sy in range(h4):
+        for sx in range(w4):
+            if pocket[sy, sx] and labels[sy, sx] == 0:
+                cur += 1
+                labels[sy, sx] = cur
+                dq = deque([(sy, sx)])
+                comp = [(sy, sx)]
+                while dq:
+                    y, x = dq.popleft()
+                    for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                        ny, nx = y + dy, x + dx
+                        if (0 <= ny < h4 and 0 <= nx < w4
+                                and pocket[ny, nx] and labels[ny, nx] == 0):
+                            labels[ny, nx] = cur
+                            dq.append((ny, nx))
+                            comp.append((ny, nx))
+                if len(comp) >= 12:
+                    ys = [p[0] for p in comp]
+                    xs = [p[1] for p in comp]
+                    if d4[ys, xs].mean() < tol * 0.33:
+                        for y, x in comp:
+                            bg4[y, x] = True
     fg4 = ~bg4
 
     # 连通域去杂物：保留面积 >= 最大块 8% 的前景块
@@ -215,18 +275,21 @@ def remove_bg(img, tol=42):
         keep = {l for l, n in sizes.items() if n >= max(biggest * 0.08, 3)}
         fg4 = np.isin(labels, list(keep))
 
-    alpha4 = np.repeat(np.repeat(fg4, 4, axis=0), 4, axis=1)
+    alpha4 = np.repeat(np.repeat(fg4, b, axis=0), b, axis=1)
     full = np.zeros((h, w), dtype=bool)
-    full[:h4 * 4, :w4 * 4] = alpha4
-    full[h4 * 4:, :] = ~near_bg[h4 * 4:, :]
-    full[:, w4 * 4:] = ~near_bg[:, w4 * 4:]
+    full[:h4 * b, :w4 * b] = alpha4
+    full[h4 * b:, :] = ~near_bg[h4 * b:, :]
+    full[:, w4 * b:] = ~near_bg[:, w4 * b:]
 
     out = np.array(img.convert('RGBA'))
     out[..., 3] = np.where(full, 255, 0)
     return zero_transparent_rgb(Image.fromarray(out, 'RGBA'))
 
 
-def extract_frames(strip, n):
+REMOVE_KW = {}   # extract_frames 的 remove_bg 额外参数（如绿幕 snap）
+
+
+def extract_frames(strip, n, remove_kw=None):
     """从姿势条带里检测角色连通域，按阅读顺序取 n 帧。
 
     生成模型并不保证把 n 个姿势画成等距横排（实测常画成网格），所以
@@ -234,10 +297,11 @@ def extract_frames(strip, n):
     的猫/人不会粘连，部件断开的耳朵尾巴靠 8-连通收回来），行优先排序
     （先上后下、行内从左到右），再取 n 帧。
     """
+    remove_kw = remove_kw if remove_kw is not None else REMOVE_KW
     import numpy as np
     from collections import deque
 
-    cut = remove_bg(strip)
+    cut = remove_bg(strip, **(remove_kw or {}))
     a = np.array(cut)
     mask = a[..., 3] > 0
     h, w = mask.shape
@@ -328,9 +392,10 @@ def _pick_n(frames, n):
     return [frames[i % len(frames)] for i in range(n)]
 
 
-def place_row(slots, n):
+def place_row(slots, n, erode=2):
     """槽内容放进 n 个 192x208 格：行内统一缩放（防帧间大小跳变）、
-    脚底对齐格底、水平居中。空槽克隆最近邻帧。"""
+    脚底对齐格底、水平居中。空槽克隆最近邻帧。erode 为缩放前蒙版向内
+    腐蚀的源图像素数（去白边）。"""
     good = [s for s in slots if s is not None]
     if not good:
         raise RuntimeError('整行条带都没抠出内容')
@@ -343,6 +408,7 @@ def place_row(slots, n):
         if s is None:
             s = last                     # 空槽：克隆上一帧保时序
         last = s
+        s = erode_alpha(s, erode)        # 先去白边过渡带再缩放
         im = s.resize((max(1, round(s.width * scale)),
                        max(1, round(s.height * scale))), _resample('LANCZOS'))
         im = binarize_alpha(im)          # 缩放插值产生半透明，重新二值化

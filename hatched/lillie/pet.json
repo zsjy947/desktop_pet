@@ -1,0 +1,16 @@
+{
+ "id": "lillie",
+ "displayName": "莉莉艾",
+ "description": "莉莉艾（NoobAI 绿幕流程 + 睡觉行 + 去白边/空腔）",
+ "spritesheetPath": "spritesheet.png",
+ "window": 208,
+ "available_rows": [
+  0,
+  1,
+  2,
+  3,
+  4,
+  6
+ ],
+ "sleep_row": 6
+}

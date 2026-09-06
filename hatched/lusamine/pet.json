@@ -1,0 +1,16 @@
+{
+ "id": "lusamine",
+ "displayName": "露莎米奈",
+ "description": "露莎米奈（NoobAI 绿幕流程 + 睡觉行 + 去白边/空腔）",
+ "spritesheetPath": "spritesheet.png",
+ "window": 208,
+ "available_rows": [
+  0,
+  1,
+  2,
+  3,
+  4,
+  6
+ ],
+ "sleep_row": 6
+}
