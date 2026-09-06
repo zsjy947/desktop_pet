@@ -20,3 +20,7 @@ tmp_*.png
 tmp_preview/
 tmp_pixel_sheet.png
 custom_characters.json
+
+# 用户参考图与本地生图产物（不入库）
+reference/
+localgen/

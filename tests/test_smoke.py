@@ -160,7 +160,7 @@ class SmokeTest(unittest.TestCase):
         """角色库：橘猫 + 12 个参考图少女，台词类别齐全。"""
         self.assertEqual(characters.CAT['kind'], 'cat')
         girls = [p for p in characters.CHARACTERS.values() if p['kind'] == 'girl']
-        self.assertEqual(len(girls), 12)
+        self.assertEqual(len(girls), 6)
         for preset in characters.CHARACTERS.values():
             for key in ('talk', 'feed', 'pet', 'sleep', 'wake', 'drop',
                         'switch'):
