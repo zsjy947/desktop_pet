@@ -118,18 +118,30 @@ def draw_bubble(cv, text, size=None, area_h=None):
                    justify='center')
 
 
+# 特效粒子（宝可梦随机动作等）：emoji 直接上色，♥/Z 走单色字形
+_FX_EMOJI = {'leaf': '🍃', 'flower': '🌸', 'fire': '🔥', 'star': '✨',
+             'spark': '⚡', 'berry': '🍓'}
+
+
 def draw_particles(cv, particles):
-    """爱心 / Zzz 粒子。"""
+    """爱心 / Zzz / 特效（宝可梦 trick）粒子。"""
     for p in particles:
-        ratio = 1.0 - p['age'] / p['life']
-        color = C.HEART if ratio > 0.45 else C.HEART_FADED
-        if p['kind'] == 'heart':
+        kind = p.get('kind', 'heart')
+        if kind == 'heart':
+            ratio = 1.0 - p['age'] / p['life']
+            color = C.HEART if ratio > 0.45 else C.HEART_FADED
             cv.create_text(p['x'], p['y'], text='♥',
                            font=('Segoe UI', int(p['size']), 'bold'), fill=color)
-        else:
+        elif kind == 'zzz':
             cv.create_text(p['x'], p['y'], text='Z',
                            font=('Comic Sans MS', int(p['size']), 'bold'),
                            fill='#9FB4C7')
+        elif kind in _FX_EMOJI:
+            # 彩色 emoji 不吃 fill；淡出靠字号随寿命收缩
+            age_ratio = p['age'] / p['life']
+            size = max(6, int(p['size'] * (1.0 - 0.5 * age_ratio)))
+            cv.create_text(p['x'], p['y'], text=_FX_EMOJI[kind],
+                           font=('Segoe UI Emoji', size))
 
 
 def sway(t, period=2.6, amp=6.0):

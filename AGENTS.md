@@ -8,8 +8,10 @@
 Python 标准库（tkinter）桌面宠物，运行时**零第三方依赖**；图片精灵的
 生成在开发期完成（pillow + rembg）。多显示器漫游、置顶（不被任务栏
 遮挡）、右键菜单弹出在宠物头顶（可微盖）。角色为二次元向，当前
-7 个：橘猫 + 图集少女×4（二乃/莉莉艾/小光/露莎米奈，NoobAI 本地
-生成）+ 芒果图集猫 + 竹兰照片精灵。三次元明星 6 位已按需求移除
+12 个：橘猫 + 图集少女×4（二乃/莉莉艾/小光/露莎米奈，NoobAI 本地
+生成）+ 芒果图集猫 + 竹兰照片精灵 + **宝可梦图集×5（皮卡丘/伊布/
+谢米陆上形态/比克提尼/新叶喵，2026-09-13 上线，见 §3.1）**。
+三次元明星 6 位已按需求移除
 （2026-09-05）；由比滨结衣也整个移除（和服版 3 次生成都没命中粉色
 和服锚点，按规则跳过，后续可加 (pink kimono:1.3) 类强色锚重试）；
 竹兰的图集版未命中锚点（大衣穿身 vs 披肩）已删、回退照片精灵。
@@ -25,10 +27,52 @@ background, flat chroma key green screen），键控天然区分角色与背景�
 注意 atlas 单行重跑必须传全行清单，否则其余行会被清空。
 交互按物种分：人类角色 = 👋打招呼（waving 行）/ 🎁送礼物（excited
 状态→图集跳跃行 + 爱心）/ 💬聊聊天；猫科（橘猫/芒果，pet.json 加
-"species":"cat"）保留 🍪喂食 / 🖐摸摸头。双击同理（人=打招呼，猫=摸
-头）。气泡为矩形浅蓝半透明方框（边框 #5DADE2、底 #D6EAF8 走
-pet/glass.xbm 87.5% 镂空露出键色=真透桌面），无尾巴箭头，对话区压
-矮到两行贴住头顶。
+"species":"cat"）保留 🍪喂食 / 🖐摸摸头；**宝可梦（"species":"pokemon"）
+= 👋打招呼 / 🍓喂个树果，没有聊聊天——只有叫声（phrases 全是拟声词），
+随机碎碎念关闭，**空闲时随机触发专属动作 trick**（behavior 的 trick
+状态播 pet.json tricks 指定的图集行 7/8，配叫声气泡 + 特效粒子
+spark/leaf/flower/fire/star，见 pet_window._tricks/_spawn_fx）。
+双击同理（人=打招呼，猫=摸头，宝可梦=打招呼）。气泡为矩形浅蓝半透
+明方框（边框 #5DADE2、底 #D6EAF8 走 pet/glass.xbm 87.5% 镂空露出
+键色=真透桌面），无尾巴箭头，对话区压矮到两行贴住头顶。
+
+## 3.1 宝可梦图集流程（2026-09-13）
+
+Q 版宝可梦首批 5 只：pikachu/eevee/shaymin(land form)/victini/
+sprigatito。与少女流程的差异：
+
+- **形象来源**：NoobAI 的 danbooru 本体 tag 直接出正统形象
+  （`pikachu / eevee / shaymin, land form / victini / sprigatito` +
+  `pokemon (creature), chibi, flat color`），绿幕底同 §1。
+- **base 筛选是大坑**：绿幕+chibi 下种子踩坑率 ~60%——马赛克乱纹、
+  徽章构图、大头特写、形象过小、"2024 Shygromai" 类文字污染都有
+  （见 localgen/pk_bases_sheet.png）。必须 3~4 个种子挑锚点、
+  **带文件名标签拼图目检**；提示词加 `centered, large in frame` 能
+  明显改善构图。最终锚点见 localgen/batch_pk.py 的 POKEMON 表。
+- **base 用 14 步**（txt2img 与步数成正比：28 步 199s / 14 步 98s，
+  平涂 Q 版质量无损）；**i2i 帧保持 28 步默认**（实测 i2i 耗时与
+  steps/denoise 基本无关，~200s/张是硬成本，降步数不省时间）。
+- **专属动作行**：`--trick7/--trick8 '姿势词|姿势词|...'` 借用图集
+  第 7/8 行槽位（Codex 的 running/review 行桌宠不用），帧姿势词用
+  | 分隔、不足循环复用。**trick 帧必须走 `--trick-txt2img`**（文生
+  图）：i2i 被站姿 init 锁死，0.65 重绘都画不出放电/冲刺类大动作
+  （实测）；正统宝可梦身份靠本体 tag 天然稳定，txt2img 直出动作帧。
+  txt2img trick 三个坑：**提示词必须加 `solo`**（否则画一对）；常画
+  一条贯穿地线且与脚连通——`_strip_ground_line` 按行宽中位数做列域
+  裁剪（形态学开运算会切伤尾巴，弃用）；**姿势词要写具体的身体动作
+  并锚定站姿**（`standing on all fours` / `standing on the ground`），
+  energy/glowing/petals swirling 类词会引出能量光晕底、花田马赛克、
+  天空形态飞行。**同种子换词会复现相同坏构图**（种子决定布局），
+  废帧必须换种子重生成；批量修帧用"种子抽奖"模式——生成→提取→
+  按尺寸（高 150~700px）验收→不合格换种子重试。`--extra-json` 把
+  species/phrases(叫声)/tricks(name,row,fx,cry) 写进 pet.json。每只
+  两个动作（皮卡丘=电气火花/电光一闪、伊布=摇尾巴/好奇歪头、
+  谢米=花朵摇曳/草地打滚、比克提尼=胜利 V/喷小火苗、新叶喵=草叶
+  飞舞/蹭脸理毛）；个别词反复出废图时直接砍到 2~3 个姿势词循环。
+- **批量入口**：`python localgen/batch_pk.py [id...]`（重跑安全，
+  build/ 已有帧跳过）；base 候选生成 `python localgen/gen_pk_bases.py`。
+- 决定**不下载新模型**：NoobAI 对 5 只宝可梦还原全部达标，Hyper-SD
+  蒸馏 LoRA 有洗掉平涂质感的风险且 i2i 耗时不与步数挂钩（省不了）。
 
 ```
 main.py                    入口（Windows DPI 感知）
@@ -167,6 +211,13 @@ custom_characters.json     接口生成的自定义角色（**不入库**）
 - 文生图模型**不听版式指令**：提示词写"单行横排 n 帧"，z-image-turbo
   实测画成 4x3 网格（好在形象一致性不错）→ 确定性切帧不能按等分槽位
   切，必须抠底后按连通域检测每个角色、行优先排序取帧（extract_frames）。
+- **ComfyUI 节点缓存是单槽的**（2026-09-13 实测）：只有相邻两次执行
+  提示词完全相同才命中（2s）；中间插一个不同词的帧就被顶掉，重复词
+  的帧重跑照样全价。frame 模式因此只生成**去重后的姿势词**，其余槽位
+  克隆补位（comfy_hatch cmd_atlas 内置），否则行走行 8 帧会全价跑。
+- txt2img 采样时间与步数成正比（28 步 199s / 14 步 98s，~7s/步）；
+  **i2i 帧耗时与 steps/denoise 基本无关**（~200s/张硬成本），降步数
+  不省时间。
 - 无参考图输入可用，行与行之间身份会有漂移；行内一致性远好于行间。
   行内统一缩放防帧间大小跳；不用的行（failed/review 实测偏大/偏小）
   漂移可容忍，缺行运行时回落 idle（available_rows 写进 pet.json）。

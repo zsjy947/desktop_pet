@@ -127,10 +127,20 @@ def _put_init(path):
 # ---------------- 工作流构建 ----------------
 
 def wf_ckpt(ckpt, pos, neg, w, h, seed, steps, cfg, sampler, scheduler,
-            denoise=1.0, init=None, prefix='comfy'):
-    """SD1.5/SDXL checkpoint 的文生图 / 图生图（init 给定时）最小图。"""
+            denoise=1.0, init=None, prefix='comfy',
+            lora=None, lora_strength=1.0):
+    """SD1.5/SDXL checkpoint 的文生图 / 图生图（init 给定时）最小图。
+    lora 给定时叠加 LoraLoader（如 Hyper-SD 蒸馏 LoRA 提速）。"""
     g = {'1': {'class_type': 'CheckpointLoaderSimple',
                'inputs': {'ckpt_name': ckpt}}}
+    model, clip = ['1', 0], ['1', 1]
+    if lora:
+        g['11'] = {'class_type': 'LoraLoader',
+                   'inputs': {'lora_name': lora,
+                              'strength_model': lora_strength,
+                              'strength_clip': lora_strength,
+                              'model': model, 'clip': clip}}
+        model, clip = ['11', 0], ['11', 1]
     if init:
         g['2'] = {'class_type': 'LoadImage', 'inputs': {'image': init}}
         g['3'] = {'class_type': 'VAEEncode',
@@ -141,11 +151,11 @@ def wf_ckpt(ckpt, pos, neg, w, h, seed, steps, cfg, sampler, scheduler,
                   'inputs': {'width': w, 'height': h, 'batch_size': 1}}
         latent = ['6', 0]
     g['4'] = {'class_type': 'CLIPTextEncode',
-              'inputs': {'clip': ['1', 1], 'text': pos}}
+              'inputs': {'clip': clip, 'text': pos}}
     g['5'] = {'class_type': 'CLIPTextEncode',
-              'inputs': {'clip': ['1', 1], 'text': neg}}
+              'inputs': {'clip': clip, 'text': neg}}
     g['7'] = {'class_type': 'KSampler',
-              'inputs': {'model': ['1', 0], 'positive': ['4', 0],
+              'inputs': {'model': model, 'positive': ['4', 0],
                          'negative': ['5', 0], 'latent_image': latent,
                          'seed': seed, 'steps': steps, 'cfg': cfg,
                          'sampler_name': sampler, 'scheduler': scheduler,
@@ -203,7 +213,8 @@ _last_model = None
 
 def gen(out, pos, neg='', ckpt=None, zimage=False, w=None, h=None,
         seed=20260905, steps=None, cfg=None, sampler=None, scheduler=None,
-        denoise=1.0, init=None, prefix='comfy', free_first=False):
+        denoise=1.0, init=None, prefix='comfy', free_first=False,
+        lora=None, lora_strength=1.0):
     """生成一张图。参数缺省时取该底模的稳妥参数；换模型自动卸载。"""
     global _last_model
     if zimage:
@@ -216,7 +227,7 @@ def gen(out, pos, neg='', ckpt=None, zimage=False, w=None, h=None,
         sampler = sampler or d.get('sampler', 'euler_ancestral')
         scheduler = scheduler or d.get('scheduler', 'normal')
 
-    model = 'zimage' if zimage else ckpt
+    model = ('zimage' if zimage else ckpt) + (f'+{lora}' if lora else '')
     if free_first or (_last_model is not None and model != _last_model):
         print(f'       [comfy] 切换模型 {_last_model} -> {model}，先卸载',
               flush=True)
@@ -236,7 +247,8 @@ def gen(out, pos, neg='', ckpt=None, zimage=False, w=None, h=None,
     else:
         graph = wf_ckpt(ckpt, pos, neg, w, h, seed, steps, cfg, sampler,
                         scheduler, denoise=denoise, init=init_name,
-                        prefix=prefix)
+                        prefix=prefix, lora=lora,
+                        lora_strength=lora_strength)
     t0 = time.time()
     imgs = wait_output(submit(graph))
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
@@ -323,19 +335,63 @@ ROW_DENOISE = {'idle': 0.3, 'running-right': 0.45, 'waving': 0.45,
                'jumping': 0.5, 'failed': 0.45, 'waiting': 0.4,
                'running': 0.35, 'review': 0.35, 'sleep': 0.35}
 
+# trick 行走 txt2img（--trick-txt2img）：i2i 被站姿 init 锁死，画不出
+# 放电/冲刺这类带特效的大动作；正统宝可梦身份靠 danbooru 本体 tag
+# 天然稳定，trick 帧直接文生图（绿幕底同款背景词）。
+TRICK_BG = ('centered, large in frame, uniform flat solid bright green '
+            'background, flat chroma key green screen background, no '
+            'gradient, no vignette, no shadow, no text')
 
-def _single_frame(frame_png, w, h):
+
+def _strip_ground_line(img, bottom=0.45, ratio=1.5):
+    """裁掉连接在脚下的地线（txt2img trick 帧常画一条贯穿地线，与脚
+    连通被一起抠出）。底部带区里"行宽 ≫ 中位行宽"的行是地线行：
+    地线行超出角色列域的像素裁掉，角色本体（含尾巴等横向部件）保留；
+    脚底正下方贴着脚的短线留在线内，缩进格子里读作地面阴影。"""
+    import numpy as np
+    a = np.array(img)
+    m = a[..., 3] > 0
+    ys = np.where(m.any(axis=1))[0]
+    if not len(ys):
+        return img
+    y0, y1 = ys[0], ys[-1]
+    band = y0 + int((y1 - y0) * (1 - bottom))
+    widths = m[band:, :].sum(axis=1)
+    pos = widths[widths > 0]
+    if not len(pos):
+        return img
+    med = np.median(pos)
+    sel = np.zeros_like(m)
+    sel[:band, :] = m[:band, :]
+    sel[band:, :] = m[band:, :] & (widths <= med * ratio)[:, None]
+    cols = np.where(sel.any(axis=0))[0]
+    if not len(cols):
+        return img
+    keep = np.zeros(m.shape[1], dtype=bool)
+    keep[cols[0]:cols[-1] + 1] = True
+    m[band:, :] &= keep[None, :]
+    a[..., 3] = np.where(m, 255, 0)
+    out = hp.zero_transparent_rgb(Image.fromarray(a, 'RGBA'))
+    bbox = out.getbbox()
+    return out.crop(bbox) if bbox else out
+
+
+def _single_frame(frame_png, w, h, trim_ground=False):
     """从一张生成图里取最大的角色连通域（RGBA，紧致裁剪）。"""
     frames = hp.extract_frames(Image.open(frame_png), 1)
-    return frames[0]
+    f = frames[0]
+    if f is not None and trim_ground:
+        f = _strip_ground_line(f)
+    return f
 
 
 # ---------------- 子命令 ----------------
 
 def cmd_gen(args):
     gen(args.out, args.pos, args.neg, ckpt=args.ckpt, zimage=args.zimage,
-        w=args.w, h=args.h, seed=args.seed, denoise=args.denoise,
-        init=args.init, prefix='comfy-eval')
+        w=args.w, h=args.h, seed=args.seed, steps=args.steps,
+        denoise=args.denoise, init=args.init, prefix='comfy-eval',
+        lora=args.lora, lora_strength=args.lora_strength)
     if args.base_out:
         frame = _single_frame(args.out, args.w or 512, args.h or 512)
         if frame is None:
@@ -361,12 +417,25 @@ def cmd_atlas(args):
     # 'sleep' 是本项目扩展：借用图集第 6 行槽位放睡觉姿势行（运行时
     # pet.json 的 sleep_row 指过去）；init 用 --sleep-base（睡姿定形象）
     wanted['sleep'] = (6, hs.FRAME_COUNT[6], None)
+    # 'trick7'/'trick8' 是宝可梦专属动作行（借用第 7/8 行槽位；桌宠本来
+    # 不用 Codex 的 running/review 行）。帧姿势词用 | 分隔，不足循环复用
+    for key, spec in (('trick7', args.trick7), ('trick8', args.trick8)):
+        if not spec:
+            continue
+        words = [w.strip() for w in spec.split('|') if w.strip()]
+        if not words:
+            raise SystemExit(f'--{key} 姿势词为空')
+        ROW_FRAMES[key] = (lambda ws: lambda n: _cycle(ws, n))(words)
+        ROW_DENOISE[key] = args.trick_denoise or 0.5
+        wanted[key] = (7 if key == 'trick7' else 8,
+                       hs.FRAME_COUNT[7 if key == 'trick7' else 8], None)
 
     rows_cells = {}
     for name in rows:
         if name == 'running-left' or name not in wanted:
             continue
         row, n, _d = wanted[name]
+        txt2img = False
         slots = []
         if args.mode == 'strip' or name in strip_rows:
             out = os.path.join(build_dir, f'strip_{name}.png')
@@ -378,7 +447,9 @@ def cmd_atlas(args):
                        f'white background, no text, no grid. '
                        f'Action: {action}.')
                 gen(out, pos, args.neg, ckpt=args.ckpt, zimage=args.zimage,
-                    w=w, h=h, seed=args.seed, prefix=f'comfy-strip')
+                    w=w, h=h, seed=args.seed, steps=args.steps,
+                    prefix=f'comfy-strip',
+                    lora=args.lora, lora_strength=args.lora_strength)
             slots = hp.extract_frames(Image.open(out), n)
         else:
             if name == 'sleep':
@@ -392,22 +463,45 @@ def cmd_atlas(args):
             if not os.path.exists(init_src) or args.force:
                 fit_canvas(base_img, w, h).save(init_src)
             # 同一行共用一个种子：同 init + 同种子 + 低重绘 => 衣服细节
-            # 逐帧锁定，只有姿势词带来的微差（防"一闪一闪"）
+            # 逐帧锁定，只有姿势词带来的微差（防"一闪一闪"）。
+            # 只生成去重后的姿势词：重复词的帧与前面完全同参数，必然是
+            # 同一张图——但 ComfyUI 的节点缓存是单槽的（中间插了别的词
+            # 就被顶掉），重跑注定全价；直接克隆补位，结果等价还省钱。
             row_seed = args.seed + row * 997
-            for i, frag in enumerate(ROW_FRAMES[name](n)):
-                out = os.path.join(build_dir, f'frame_{name}_{i}.png')
+            frags = ROW_FRAMES[name](n)
+            uniq = len(dict.fromkeys(frags))
+            slots = []
+            # trick 行的 txt2img 变体：帧文件名带 t 后缀（与 i2i 版互不
+            # 覆盖，两种模式可共存/回退）
+            txt2img = args.trick_txt2img and name in ('trick7', 'trick8')
+            for i, frag in enumerate(frags[:uniq]):
+                out = os.path.join(
+                    build_dir,
+                    f'frame_{name}_{"t" if txt2img else ""}{i}.png')
                 if not os.path.exists(out) or args.force:
-                    pos = f'{identity}, full body, {frag}' if identity else \
-                          f'full body, {frag}'
-                    gen(out, pos, args.neg, ckpt=args.ckpt,
-                        zimage=args.zimage, w=w, h=h,
-                        seed=row_seed,
-                        denoise=args.denoise or ROW_DENOISE[name],
-                        init=init_src, prefix='comfy-frame')
-                slots.append(_single_frame(out, w, h))
-                print(f'       帧 {i + 1}/{n} 抠出'
+                    if txt2img:
+                        pos = f'{identity}, solo, {frag}, {TRICK_BG}'
+                        gen(out, pos, args.neg, ckpt=args.ckpt,
+                            zimage=args.zimage, w=w, h=h, seed=row_seed,
+                            steps=args.steps, denoise=1.0, prefix='comfy-frame',
+                            lora=args.lora, lora_strength=args.lora_strength)
+                    else:
+                        pos = (f'{identity}, full body, {frag}'
+                               if identity else f'full body, {frag}')
+                        gen(out, pos, args.neg, ckpt=args.ckpt,
+                            zimage=args.zimage, w=w, h=h,
+                            seed=row_seed, steps=args.steps,
+                            denoise=args.denoise or ROW_DENOISE[name],
+                            init=init_src, prefix='comfy-frame',
+                            lora=args.lora, lora_strength=args.lora_strength)
+                slots.append(_single_frame(out, w, h, trim_ground=txt2img))
+                print(f'       帧 {i + 1}/{uniq} 抠出'
                       f'{"成功" if slots[-1] else "失败(用上一帧补)"}', flush=True)
-        rows_cells[row] = hp.place_row(slots, n, erode=args.erode)
+            # 重复姿势词的槽位克隆补位（同图克隆，等价于缓存命中）
+            slots = [slots[i % len(slots)] for i in range(n)]
+        rows_cells[row] = hp.place_row(slots, n, erode=args.erode,
+                                       normalize=txt2img if name in (
+                                           'trick7', 'trick8') else False)
 
     if wanted.get('running-right', (None,))[0] == 1 and 1 in rows_cells:
         rows_cells[2] = hp.mirror_cells(rows_cells[1])
@@ -424,6 +518,12 @@ def cmd_atlas(args):
         meta['sleep_row'] = 6
         json.dump(meta, open(meta_path, 'w', encoding='utf-8'),
                   ensure_ascii=False, indent=1)
+    if args.extra_json:
+        meta_path = os.path.join(run_dir, 'pet.json')
+        meta = json.load(open(meta_path, encoding='utf-8'))
+        meta.update(json.loads(args.extra_json))
+        json.dump(meta, open(meta_path, 'w', encoding='utf-8'),
+                  ensure_ascii=False, indent=1)
     print(f'[done]  {run_dir}{os.sep}pet.json + spritesheet.png（QA 见 qa/）')
 
 
@@ -437,6 +537,9 @@ def main():
     g.add_argument('--neg', default='')
     g.add_argument('--ckpt', help='checkpoint 文件名')
     g.add_argument('--zimage', action='store_true', help='用 Z-Image GGUF')
+    g.add_argument('--lora', help='叠加的 LoRA（如 Hyper-SD 蒸馏提速）')
+    g.add_argument('--lora-strength', type=float, default=1.0)
+    g.add_argument('--steps', type=int, help='采样步数（覆盖底模默认）')
     g.add_argument('--w', type=int)
     g.add_argument('--h', type=int)
     g.add_argument('--seed', type=int, default=20260905)
@@ -471,8 +574,20 @@ def main():
     a.add_argument('--snap', type=int,
                    help="绿幕流程：背景吸附半径（推荐 80；白底流程不要开，"
                         "会把浅色服装一起吸掉）")
+    a.add_argument('--trick7', help='宝可梦动作行7：帧姿势词，用 | 分隔')
+    a.add_argument('--trick8', help='宝可梦动作行8：帧姿势词，用 | 分隔')
+    a.add_argument('--trick-denoise', type=float,
+                   help='动作行重绘幅度（缺省 0.5）')
+    a.add_argument('--trick-txt2img', action='store_true',
+                   help='动作行改 txt2img（i2i 画不出放电/冲刺等大动作时'
+                        '用；帧文件与 i2i 版互不覆盖）')
+    a.add_argument('--lora', help='叠加的 LoRA（如 Hyper-SD 蒸馏提速）')
+    a.add_argument('--lora-strength', type=float, default=1.0)
+    a.add_argument('--extra-json',
+                   help='附加 pet.json 字段（JSON，如 species/tricks）')
     a.add_argument('--w', type=int)
     a.add_argument('--h', type=int)
+    a.add_argument('--steps', type=int, help='采样步数（覆盖底模默认）')
     a.add_argument('--seed', type=int, default=20260905)
     a.add_argument('--force', action='store_true')
     a.set_defaults(fn=cmd_atlas)

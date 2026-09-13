@@ -119,7 +119,34 @@ def preset(meta):
             'name': str(meta.get('displayName') or meta['id']),
             'kind': 'hatch', 'photo': meta['id'],
             'species': str(meta.get('species') or 'human'),
-            'phrases': phrases}
+            'phrases': phrases,
+            'tricks': _tricks_of(meta)}
+
+
+def _tricks_of(meta):
+    """pet.json 的专属随机动作（宝可梦）：只保留图集里真实可播的行。"""
+    available = meta.get('available_rows')
+    out = []
+    for t in meta.get('tricks') or []:
+        if not isinstance(t, dict):
+            continue
+        try:
+            row = int(t.get('row'))
+        except (TypeError, ValueError):
+            continue
+        if not 0 <= row < N_ROWS:
+            continue
+        if available is not None and row not in available:
+            continue
+        out.append({'name': str(t.get('name') or '动作'), 'row': row,
+                    'fx': str(t.get('fx') or ''),
+                    'cry': str(t.get('cry') or '')})
+    return out
+
+
+def row_duration(row):
+    """一行动画播完一轮的秒数（trick 状态的时长基准）。"""
+    return sum(ROW_SPECS[row][3]) / 1000.0
 
 
 def registry():
@@ -183,26 +210,33 @@ def _cell(cv, pid, row, col):
     return ph
 
 
-def draw_frame(cv, *, char, state, t, facing, bubble_text, particles):
-    """绘制一帧图集桌宠。参数含义同 photo_sprites.draw_frame。"""
+def draw_frame(cv, *, char, state, t, facing, bubble_text, particles,
+               trick_row=None):
+    """绘制一帧图集桌宠。参数含义同 photo_sprites.draw_frame。
+
+    state='trick' 时按 trick_row 播宝可梦专属动作行（pet_window 注入）。
+    """
     cv.delete('all')
     pid = char['photo']
     size = window_size(pid)
 
     available = _meta(pid).get('available_rows')
-    row = _row_for(state, facing)
-    if state == 'sleep':
-        # 睡觉：pet.json 带 sleep_row 时播睡觉姿势行，否则 idle 第 0 帧定格
-        sleep_row = _meta(pid).get('sleep_row')
-        if sleep_row is not None and (available is None
-                                      or sleep_row in available):
-            row, idx = sleep_row, _phase(sleep_row, t)
-        else:
-            row, idx = 0, 0
-    elif available is not None and row not in available:
-        row, idx = 0, 0          # 缺行回落 idle
+    if state == 'trick' and trick_row is not None:
+        row, idx = trick_row, _phase(trick_row, t)
     else:
-        idx = _phase(row, t)
+        row = _row_for(state, facing)
+        if state == 'sleep':
+            # 睡觉：pet.json 带 sleep_row 时播睡觉姿势行，否则 idle 第 0 帧定格
+            sleep_row = _meta(pid).get('sleep_row')
+            if sleep_row is not None and (available is None
+                                          or sleep_row in available):
+                row, idx = sleep_row, _phase(sleep_row, t)
+            else:
+                row, idx = 0, 0
+        elif available is not None and row not in available:
+            row, idx = 0, 0          # 缺行回落 idle
+        else:
+            idx = _phase(row, t)
     idx %= FRAME_COUNT[row]
 
     ph = _cell(cv, pid, row, idx)

@@ -148,7 +148,7 @@ class PetApp:
                                    bg=C.KEY_COLOR, highlightthickness=0, bd=0)
         self.cv_bubble.place(x=0, y=0)
 
-        self.behavior = Behavior()
+        self.behavior = Behavior(tricks=self._tricks())
         self.particles = []          # 爱心 / Zzz 粒子
         self.vy = 0.0                # 下落速度
         self.bubble_text = ''
@@ -156,6 +156,7 @@ class PetApp:
         self.next_talk = time.monotonic() + random.uniform(
             C.IDLE_TALK_MIN, C.IDLE_TALK_MAX)
         self._menu_open = False      # 右键菜单是否正在显示
+        self._prev_bstate = None     # 上一帧行为状态（trick 进入检测用）
 
         # 拖拽偏移（按下点相对窗口左上角）
         self._drag_off = (0, 0)
@@ -211,6 +212,21 @@ class PetApp:
 
     def _use_hatch(self, char):
         return char.get('kind') == 'hatch' and bool(char.get('photo'))
+
+    def _tricks(self):
+        """当前角色的专属随机动作（宝可梦）：行号 + 播放时长 +
+        特效粒子 + 叫声。普通角色返回空列表。"""
+        if not self._use_hatch(self.char):
+            return []
+        out = []
+        for t in self.char.get('tricks') or []:
+            out.append({**t,
+                        'duration': hatch_sprites.row_duration(t['row']) * 2})
+        return out
+
+    def _is_pokemon(self):
+        """宝可梦：只有叫声（无对话/随机碎碎念），菜单不带聊聊天。"""
+        return self.char.get('species') == 'pokemon'
 
     def _init_position(self):
         """出生在主屏右下角（窗口底边=脚底，落在工作区底边=任务栏上沿）。"""
@@ -305,12 +321,16 @@ class PetApp:
         if self._is_cat():
             menu.add_command(label='🍪 喂食', command=self._feed)
             menu.add_command(label='🖐 摸摸头', command=self._pet)
+        elif self._is_pokemon():
+            menu.add_command(label='👋 打个招呼', command=self._greet)
+            menu.add_command(label='🍓 喂个树果', command=self._feed_berry)
         else:
             menu.add_command(label='👋 打个招呼', command=self._greet)
             menu.add_command(label='🎁 送个礼物', command=self._gift)
         sleep_label = '☀ 叫醒' if self.behavior.state == 'sleep' else '😴 打个盹'
         menu.add_command(label=sleep_label, command=self._toggle_sleep)
-        menu.add_command(label='💬 聊聊天', command=self._chat)
+        if not self._is_pokemon():      # 宝可梦只有叫声，不聊天
+            menu.add_command(label='💬 聊聊天', command=self._chat)
         menu.add_separator()
         menu.add_radiobutton(label='🐱 橘猫', variable=self._char_var,
                              value='cat', command=self._switch_character)
@@ -319,7 +339,12 @@ class PetApp:
         for preset in self.registry.values():
             if preset['kind'] not in ('girl', 'hatch'):
                 continue
-            emoji = '🧚' if preset['kind'] == 'girl' else '🐣'
+            if preset.get('species') == 'pokemon':
+                emoji = '🐾'
+            elif preset['kind'] == 'girl':
+                emoji = '🧚'
+            else:
+                emoji = '🐣'
             menu.add_radiobutton(label=f'{emoji} {preset["name"]}',
                                  variable=self._char_var, value=preset['id'],
                                  command=self._switch_character)
@@ -365,6 +390,7 @@ class PetApp:
         self.char = self.registry[new_id]
         save_pref(new_id)
         self.root.title(f'桌面宠物 · {self.char["name"]}')
+        self.behavior.tricks = self._tricks()
 
         # 图片精灵角色窗口更大：窗口底边（脚底）保持不动
         new_size = self._size_for(self.char)
@@ -419,6 +445,15 @@ class PetApp:
         self._spawn_hearts(10)
         self._say(random.choice(self._p('feed')))
 
+    def _feed_berry(self):
+        """喂宝可梦树果：开心 + 树果/爱心特效 + 叫声。"""
+        if self.behavior.state == 'sleep':
+            self.behavior.wake()
+        self.behavior.happy()
+        self._spawn_fx('berry', 4)
+        self._spawn_hearts(6)
+        self._say(random.choice(self._p('feed')))
+
     def _toggle_sleep(self):
         if self.behavior.state == 'sleep':
             self.behavior.wake()
@@ -461,6 +496,21 @@ class PetApp:
             'life': 2.4,
             'size': 10,
         })
+
+    def _spawn_fx(self, kind, n):
+        """特效粒子雨（宝可梦动作/喂树果）：电花/树叶/花朵/火焰/星星。"""
+        k = self.size / 160
+        for _ in range(n):
+            self.particles.append({
+                'kind': kind,
+                'x': self.size / 2 + random.uniform(-45 * k, 45 * k),
+                'y': self.size / 2 + random.uniform(-35 * k, 5 * k),
+                'vx': random.uniform(-12, 12),
+                'vy': random.uniform(-45, -20),
+                'age': 0.0,
+                'life': random.uniform(0.9, 1.4),
+                'size': random.randint(11, 17),
+            })
 
     # ---------------- 主循环 ----------------
     def _tick(self):
@@ -508,8 +558,17 @@ class PetApp:
         if b.state == 'sleep' and random.random() < 0.05:
             self._spawn_zzz()
 
-        # 随机碎碎念
-        if b.state in ('idle', 'walk') and now >= self.next_talk:
+        # 进入专属动作（宝可梦）：叫声气泡 + 对应特效粒子
+        trick = b.current_trick
+        if b.state != self._prev_bstate and b.state == 'trick' and trick:
+            self._say(trick['cry'])
+            if trick.get('fx'):
+                self._spawn_fx(trick['fx'], 6)
+        self._prev_bstate = b.state
+
+        # 随机碎碎念（宝可梦只有叫声：不碎碎念）
+        if (b.state in ('idle', 'walk') and not self._is_pokemon()
+                and now >= self.next_talk):
             self._say(random.choice(self._p('talk')))
             self.next_talk = now + random.uniform(C.IDLE_TALK_MIN, C.IDLE_TALK_MAX)
         if self.talk_until <= now:
@@ -545,7 +604,9 @@ class PetApp:
             hatch_sprites.draw_frame(self.cv, char=self.char, state=b.state,
                                      t=t, facing=b.facing,
                                      bubble_text='',
-                                     particles=self.particles)
+                                     particles=self.particles,
+                                     trick_row=(trick['row'] if trick
+                                                else None))
         else:
             girl_sprites.draw_frame(self.cv, char=self.char,
                                     state=_draw_state(b.state),

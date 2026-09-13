@@ -392,13 +392,23 @@ def _pick_n(frames, n):
     return [frames[i % len(frames)] for i in range(n)]
 
 
-def place_row(slots, n, erode=2):
+def place_row(slots, n, erode=2, normalize=False):
     """槽内容放进 n 个 192x208 格：行内统一缩放（防帧间大小跳变）、
     脚底对齐格底、水平居中。空槽克隆最近邻帧。erode 为缩放前蒙版向内
-    腐蚀的源图像素数（去白边）。"""
+    腐蚀的源图像素数（去白边）。
+
+    normalize=True（txt2img trick 行用）：各帧独立缩放到行高中位数——
+    文生图各帧绝对尺寸随机，独立姿势之间相对大小没有意义，按最大帧
+    适配会让一个高帧（如头顶闪电）把整行拖小。
+    """
     good = [s for s in slots if s is not None]
     if not good:
         raise RuntimeError('整行条带都没抠出内容')
+    import numpy as np
+    if normalize:
+        target_h = float(np.median([s.height for s in good]))
+    else:
+        target_h = None
     max_w = max(s.width for s in good)
     max_h = max(s.height for s in good)
     scale = min((CELL_W - MAX_SIDE) / max_w, (CELL_H - MAX_SIDE) / max_h)
@@ -409,8 +419,14 @@ def place_row(slots, n, erode=2):
             s = last                     # 空槽：克隆上一帧保时序
         last = s
         s = erode_alpha(s, erode)        # 先去白边过渡带再缩放
-        im = s.resize((max(1, round(s.width * scale)),
-                       max(1, round(s.height * scale))), _resample('LANCZOS'))
+        sc = scale
+        if target_h:
+            # 逐帧归一到中位高，但不许超出格子（宽/高任一超就压回）
+            sc = target_h / s.height
+            sc = min(sc, (CELL_W - MAX_SIDE) / s.width,
+                     (CELL_H - MAX_SIDE) / s.height)
+        im = s.resize((max(1, round(s.width * sc)),
+                       max(1, round(s.height * sc))), _resample('LANCZOS'))
         im = binarize_alpha(im)          # 缩放插值产生半透明，重新二值化
         canvas = Image.new('RGBA', (CELL_W, CELL_H), (0, 0, 0, 0))
         canvas.alpha_composite(

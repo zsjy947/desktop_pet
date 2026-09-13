@@ -1,0 +1,61 @@
+{
+ "id": "eevee",
+ "displayName": "伊布",
+ "description": "伊布（Q版宝可梦 · 绿幕流程 · 专属随机动作）",
+ "spritesheetPath": "spritesheet.png",
+ "window": 208,
+ "available_rows": [
+  0,
+  1,
+  2,
+  3,
+  4,
+  6,
+  7,
+  8
+ ],
+ "sleep_row": 6,
+ "species": "pokemon",
+ "phrases": {
+  "talk": [
+   "伊布～？",
+   "伊——布。"
+  ],
+  "feed": [
+   "伊布～！伊布伊布！",
+   "布伊～！"
+  ],
+  "pet": [
+   "伊布～伊布～",
+   "伊——布！"
+  ],
+  "sleep": [
+   "伊……布……",
+   "伊布……Zzz"
+  ],
+  "wake": [
+   "伊布！伊布！"
+  ],
+  "drop": [
+   "伊呀——布！"
+  ],
+  "switch": [
+   "伊布～！",
+   "伊——布～"
+  ]
+ },
+ "tricks": [
+  {
+   "name": "摇尾巴",
+   "row": 7,
+   "fx": "heart",
+   "cry": "伊布～伊布！"
+  },
+  {
+   "name": "好奇歪头",
+   "row": 8,
+   "fx": "",
+   "cry": "伊？——伊布！"
+  }
+ ]
+}

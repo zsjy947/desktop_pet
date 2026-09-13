@@ -413,11 +413,11 @@ class SmokeTest(unittest.TestCase):
             cache.clear()
             self.addCleanup(cache.clear)
 
-        # 合成图集：第 0/1/2 行有内容，其余行保持全透明
+        # 合成图集：第 0/1/2/7 行有内容，其余行保持全透明
         atlas = Image.new('RGBA', (hatch_sprites.ATLAS_W, hatch_sprites.ATLAS_H),
                           (0, 0, 0, 0))
         d = ImageDraw.Draw(atlas)
-        for row, n in ((0, 6), (1, 8), (2, 8)):
+        for row, n in ((0, 6), (1, 8), (2, 8), (7, 6)):
             for col in range(n):
                 x0, y0 = col * hatch_sprites.CELL_W, row * hatch_sprites.CELL_H
                 d.ellipse((x0 + 40, y0 + 40, x0 + 150, y0 + 202),
@@ -451,6 +451,15 @@ class SmokeTest(unittest.TestCase):
                                      t=0.4, facing=-1, bubble_text='测试',
                                      particles=[])
             self.pump(1)
+        # 宝可梦 trick：指定动作行按行播放；无 trick_row 时回落 idle
+        hatch_sprites.draw_frame(app.cv, char=app.char, state='trick',
+                                 t=0.2, facing=1, bubble_text='皮卡！',
+                                 particles=[], trick_row=7)
+        self.pump(1)
+        hatch_sprites.draw_frame(app.cv, char=app.char, state='trick',
+                                 t=0.2, facing=1, bubble_text='',
+                                 particles=[], trick_row=None)
+        self.pump(1)
         app._char_var.set('cat')
         app._switch_character()
         self.pump(2)
@@ -498,6 +507,46 @@ class SmokeTest(unittest.TestCase):
         app.behavior.happy()
         app.behavior.pause()
         self.assertEqual(app.behavior.state, 'happy')
+
+    def test_pokemon_trick_state_and_preset(self):
+        """宝可梦：trick 随机动作状态 + pet.json tricks 过滤 + 叫声包。"""
+        import time as _time
+        from pet.behavior import Behavior
+        from pet import hatch_sprites
+
+        tricks = [{'name': '电气火花', 'row': 7, 'fx': 'spark',
+                   'cry': '皮卡皮卡！', 'duration': 1.6}]
+        b = Behavior(tricks=tricks)
+        b.wake()          # 深夜时段构造会自动打盹，先唤醒再测随机分支
+        b.state_until = _time.monotonic() - 1      # 到期触发随机分支
+        with mock.patch('pet.behavior.random.random', return_value=0.0):
+            b.update()
+        self.assertEqual(b.state, 'trick')
+        self.assertEqual(b.current_trick['row'], 7)
+        b.state_until = _time.monotonic() - 1
+        b.update()
+        self.assertEqual(b.state, 'idle')
+        self.assertIsNone(b.current_trick)
+        self.assertEqual(b.state, 'idle')
+
+        # tricks 过滤：不可用的行（available_rows 之外/越界/非法）被剔除
+        meta = {'id': 'zzpk', 'species': 'pokemon', 'available_rows': [0, 7],
+                'tricks': [{'name': 'a', 'row': 7},
+                           {'name': 'b', 'row': 8},      # 不在 available_rows
+                           {'name': 'c', 'row': 99},     # 越界
+                           {'name': 'd', 'row': 'x'}]}   # 非法
+        kept = hatch_sprites._tricks_of(meta)
+        self.assertEqual([t['name'] for t in kept], ['a'])
+
+        # preset 带出 species 与 tricks；phrases 即叫声包
+        from pet import custom
+        meta2 = {'id': 'zzpk', 'displayName': '皮卡丘', 'species': 'pokemon',
+                 'phrases': {'talk': ['皮卡～？']}}
+        preset = hatch_sprites.preset(meta2)
+        self.assertEqual(preset['species'], 'pokemon')
+        self.assertEqual(preset['phrases']['talk'], ['皮卡～？'])
+        self.assertEqual(preset['phrases']['feed'],
+                         custom.DEFAULT_PHRASES['feed'])
 
 
 if __name__ == '__main__':

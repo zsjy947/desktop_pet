@@ -7,6 +7,7 @@
         任意 --(按下拖拽)--> drag --(松手且悬空)--> fall --(落地)--> idle
         idle/walk --(喂食/摸头/打招呼)--> happy --> idle
         idle/walk --(送礼物)--> excited（开心跳）--> idle
+        idle --(随机，宝可梦专属)--> trick（设定动作）--> idle
     """
 import random
 import time
@@ -15,9 +16,13 @@ from . import config as C
 
 
 class Behavior:
-    def __init__(self):
+    def __init__(self, tricks=None):
         self.state = 'idle'
         self.facing = -1
+        # 宝可梦专属随机动作：[{'name','row','fx','cry'}, ...]（桌面宠物
+        # 窗口按 pet.json 注入；空列表 = 普通角色，不触发 trick）
+        self.tricks = list(tricks or [])
+        self._trick_i = -1
         now = time.monotonic()
         self.state_until = now + random.uniform(3.0, 8.0)
         # 深夜启动时先打个盹
@@ -30,15 +35,25 @@ class Behavior:
     def moving(self):
         return self.state == 'walk'
 
+    @property
+    def current_trick(self):
+        """trick 状态下正在做的动作，否则 None。"""
+        if self.state == 'trick' and 0 <= self._trick_i < len(self.tricks):
+            return self.tricks[self._trick_i]
+        return None
+
     # ---------- 每帧推进 ----------
     def update(self):
-        """推进状态机：happy/excited 到期回落 idle；空闲/走路按计时器
-        随机切换。"""
-        if (self.state in ('happy', 'excited')
+        """推进状态机：happy/excited/trick 到期回落 idle；空闲/走路按
+        计时器随机切换。"""
+        if (self.state in ('happy', 'excited', 'trick')
                 and time.monotonic() >= self.state_until):
             self._idle()
         if self.state in ('idle', 'walk') and time.monotonic() >= self.state_until:
-            if self.state == 'idle' and random.random() < 0.65:
+            if (self.state == 'idle' and self.tricks
+                    and random.random() < 0.3):
+                self._trick()
+            elif self.state == 'idle' and random.random() < 0.65:
                 self._walk()
             else:
                 self._idle()
@@ -70,6 +85,13 @@ class Behavior:
         """强正反馈（送礼物等）：开心到跳起来，播图集跳跃行。"""
         self.state = 'excited'
         self.state_until = time.monotonic() + 2.2
+
+    def _trick(self):
+        """随机来一段专属动作（播 pet.json 指定的图集行）。"""
+        self._trick_i = random.randrange(len(self.tricks))
+        self.state = 'trick'
+        self.state_until = time.monotonic() + self.tricks[self._trick_i][
+            'duration']
 
     def start_drag(self):
         self.state = 'drag'
