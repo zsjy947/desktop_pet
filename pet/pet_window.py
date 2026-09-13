@@ -90,8 +90,15 @@ def menu_origin(pet_x, window_top_y, size, monitor, n_items, n_seps,
 
 
 def _draw_state(state):
-    """excited（开心跳）只有图集有跳跃行，照片/Canvas 精灵回落 happy。"""
-    return 'happy' if state == 'excited' else state
+    """excited（开心跳）只有图集有跳跃行，照片/Canvas 精灵回落 happy；
+    trick（宝可梦专属动作）只有图集有动作行，回落 idle——透传会让
+    照片精灵在 manifest 里查不到 'trick' 行直接 KeyError，主循环崩掉
+    （表现为角色消失、气泡永不消失）。"""
+    if state == 'excited':
+        return 'happy'
+    if state == 'trick':
+        return 'idle'
+    return state
 
 
 class PetApp:
@@ -391,6 +398,11 @@ class PetApp:
         save_pref(new_id)
         self.root.title(f'桌面宠物 · {self.char["name"]}')
         self.behavior.tricks = self._tricks()
+        # 切走时结束旧角色的瞬态状态：trick/happy/excited 若跨角色残留，
+        # 会在新角色的渲染器里查不到对应帧（trick 已让 _draw_state 回落
+        # idle，这里再显式复位一次，防止行为层也带着旧状态跑）
+        if self.behavior.state in ('trick', 'happy', 'excited'):
+            self.behavior._idle()
 
         # 图片精灵角色窗口更大：窗口底边（脚底）保持不动
         new_size = self._size_for(self.char)

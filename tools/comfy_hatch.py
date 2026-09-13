@@ -338,6 +338,7 @@ ROW_DENOISE = {'idle': 0.3, 'running-right': 0.45, 'waving': 0.45,
 # trick 行走 txt2img（--trick-txt2img）：i2i 被站姿 init 锁死，画不出
 # 放电/冲刺这类带特效的大动作；正统宝可梦身份靠 danbooru 本体 tag
 # 天然稳定，trick 帧直接文生图（绿幕底同款背景词）。
+# 本体含绿色/含白的新叶喵类角色用 --trick-bg 换键控色（如蓝幕）。
 TRICK_BG = ('centered, large in frame, uniform flat solid bright green '
             'background, flat chroma key green screen background, no '
             'gradient, no vignette, no shadow, no text')
@@ -413,6 +414,11 @@ def cmd_atlas(args):
     strip_rows = {r.strip() for r in args.strip_rows.split(',') if r.strip()}
     if args.snap:
         hp.REMOVE_KW = {'snap': args.snap}
+    # 动作行换键控色：本体含绿色（新叶喵）绿幕会吃掉本体，换蓝幕；
+    # TRICK_BG 在 gen 调用点实时读取，模块级覆盖即可
+    global TRICK_BG
+    if args.trick_bg:
+        TRICK_BG = args.trick_bg
     wanted = {name: (row, n, _d) for name, row, n, _d in hs.ROW_SPECS}
     # 'sleep' 是本项目扩展：借用图集第 6 行槽位放睡觉姿势行（运行时
     # pet.json 的 sleep_row 指过去）；init 用 --sleep-base（睡姿定形象）
@@ -456,10 +462,14 @@ def cmd_atlas(args):
                 if not args.sleep_base:
                     raise SystemExit("rows 含 sleep 时需要 --sleep-base"
                                      "（睡姿定形象图）")
-                base_img = Image.open(args.sleep_base).convert('RGB')
+                base_path = args.sleep_base
             else:
-                base_img = base
-            init_src = os.path.join(build_dir, f'init_{name}.png')
+                base_path = args.base
+            base_img = Image.open(base_path).convert('RGB')
+            # init 文件名带 base mtime：换了 base 定形象图自动失效重建，
+            # 否则会一直用旧 init 图生图（换 base 不生效的坑）
+            init_src = os.path.join(
+                build_dir, f'init_{name}_{int(os.path.getmtime(base_path))}.png')
             if not os.path.exists(init_src) or args.force:
                 fit_canvas(base_img, w, h).save(init_src)
             # 同一行共用一个种子：同 init + 同种子 + 低重绘 => 衣服细节
@@ -581,6 +591,10 @@ def main():
     a.add_argument('--trick-txt2img', action='store_true',
                    help='动作行改 txt2img（i2i 画不出放电/冲刺等大动作时'
                         '用；帧文件与 i2i 版互不覆盖）')
+    a.add_argument('--trick-bg',
+                   help='动作行 txt2img 的背景词（本体含绿色/白色时换'
+                        '"uniform flat solid bright blue background, flat '
+                        'chroma key blue screen background"）')
     a.add_argument('--lora', help='叠加的 LoRA（如 Hyper-SD 蒸馏提速）')
     a.add_argument('--lora-strength', type=float, default=1.0)
     a.add_argument('--extra-json',

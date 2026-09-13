@@ -70,7 +70,17 @@ sprigatito。与少女流程的差异：
   谢米=花朵摇曳/草地打滚、比克提尼=胜利 V/喷小火苗、新叶喵=草叶
   飞舞/蹭脸理毛）；个别词反复出废图时直接砍到 2~3 个姿势词循环。
 - **批量入口**：`python localgen/batch_pk.py [id...]`（重跑安全，
-  build/ 已有帧跳过）；base 候选生成 `python localgen/gen_pk_bases.py`。
+  build/ 已有帧即跳过）；base 候选生成 `python localgen/gen_pk_bases.py`。
+- **本体含绿色/含白的角色不能走绿幕**（2026-09-13 用户复核：新叶喵
+  本体深绿被键掉、比克提尼耳朵受损）：新叶喵整只换**蓝幕**（蓝底
+  prompt 同款、`--trick-bg` 换动作行背景词、--snap 80 照旧）；比克
+  提尼是 base 画错（红冠黑耳，官方为橙冠），换种子重抽 base。
+- **init 缓存必须带 base mtime**（comfy_hatch 已修）：init_{row}.png
+  固定文件名时换了 base 定形象图不会生效，i2i 会一直用旧 base——
+  表现为"重建了但角色还是旧的/更白"。现在文件名是
+  init_{row}_{base_mtime}.png，换 base 自动失效。
+- txt2img trick 抽奖验收要查**键控率**（remove_bg 后 alpha==0 占比
+  > 0.5），只验尺寸会收下"整张蓝卡"这种没键开的废图。
 - 决定**不下载新模型**：NoobAI 对 5 只宝可梦还原全部达标，Hyper-SD
   蒸馏 LoRA 有洗掉平涂质感的风险且 i2i 耗时不与步数挂钩（省不了）。
 

@@ -508,6 +508,27 @@ class SmokeTest(unittest.TestCase):
         app.behavior.pause()
         self.assertEqual(app.behavior.state, 'happy')
 
+    def test_switch_away_from_trick_does_not_crash(self):
+        """宝可梦 trick 中切到照片精灵：主循环不得崩（trick 行只有图集
+        有，_draw_state 需回落 idle，否则 photo_sprites KeyError）。"""
+        from pet import photo_sprites
+
+        app = self.app
+        app.registry = app._registry()
+        self.assertIn('pikachu', app.registry)
+        app._char_var.set('pikachu')
+        app._switch_character()
+        app.behavior._trick()
+        self.assertEqual(app.behavior.state, 'trick')
+        app._char_var.set('cynthia')
+        app._switch_character()
+        self.pump(2)                      # 推主循环：崩溃会在此暴露
+        self.assertEqual(app.behavior.state, 'idle')
+        self.assertEqual(app.size, photo_sprites.window_size('cynthia'))
+        app._char_var.set('cat')
+        app._switch_character()
+        self.pump(1)
+
     def test_pokemon_trick_state_and_preset(self):
         """宝可梦：trick 随机动作状态 + pet.json tricks 过滤 + 叫声包。"""
         import time as _time
