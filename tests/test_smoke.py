@@ -157,12 +157,17 @@ class SmokeTest(unittest.TestCase):
         self.assertEqual(app.y, app.ground_y)
 
     def test_characters_library(self):
-        """角色库：橘猫 + 6 个二次元少女（三次元明星已移除），台词类别齐全。"""
+        """角色库：橘猫 + 图集少女（人物线分支）；台词类别齐全。
+
+        分支无关：宝可梦分支 characters.py 只有橘猫（GIRLS 为空），
+        人物断言仅在有人物预设时要求全集。
+        """
         self.assertEqual(characters.CAT['kind'], 'cat')
         girls = [p for p in characters.CHARACTERS.values() if p['kind'] == 'girl']
-        self.assertEqual(len(girls), 5)
-        self.assertEqual({p['id'] for p in girls},
-                         {'nino', 'lillie', 'dawn', 'cynthia', 'lusamine'})
+        expected = {'nino', 'lillie', 'dawn', 'cynthia', 'lusamine'}
+        self.assertTrue({p['id'] for p in girls} <= expected)
+        if girls:                        # 人物线分支：5 个少女应齐全
+            self.assertEqual({p['id'] for p in girls}, expected)
         for preset in characters.CHARACTERS.values():
             for key in ('talk', 'feed', 'pet', 'sleep', 'wake', 'drop',
                         'switch'):
@@ -193,10 +198,15 @@ class SmokeTest(unittest.TestCase):
     def test_switch_character_changes_phrases_and_persists(self):
         app = self.app
         old_name = app.char['name']
-        app._char_var.set('nino')
+        # 分支无关：优先 nino（人物线），否则任一非橘猫角色（宝可梦线）
+        other = ('nino' if 'nino' in app.registry
+                 else next(pid for pid, p in app.registry.items()
+                           if pid != 'cat'))
+        other_name = app.registry[other]['name']
+        app._char_var.set(other)
         app._switch_character()
-        self.assertEqual(app.char['id'], 'nino')
-        self.assertEqual(app.char['name'], '中野二乃')
+        self.assertEqual(app.char['id'], other)
+        self.assertEqual(app.char['name'], other_name)
         self.assertIsNot(app.char['phrases']['talk'],
                          characters.CAT['phrases']['talk'])
         self.pump(2)
@@ -204,9 +214,9 @@ class SmokeTest(unittest.TestCase):
         self.assertIn(app.bubble_text, app.char['phrases']['switch'])
 
         # 偏好已写入临时文件，重新初始化时应恢复该角色
-        self.assertEqual(pet_window.load_pref(), 'nino')
+        self.assertEqual(pet_window.load_pref(), other)
         self.assertEqual(pet_window.custom.registry()[pet_window.load_pref()]
-                         ['name'], '中野二乃')
+                         ['name'], other_name)
 
         # 切回橘猫
         app._char_var.set('cat')
@@ -509,22 +519,30 @@ class SmokeTest(unittest.TestCase):
         self.assertEqual(app.behavior.state, 'happy')
 
     def test_switch_away_from_trick_does_not_crash(self):
-        """宝可梦 trick 中切到照片精灵：主循环不得崩（trick 行只有图集
-        有，_draw_state 需回落 idle，否则 photo_sprites KeyError）。"""
+        """宝可梦 trick 中切到照片/Canvas 角色：主循环不得崩（trick 行
+        只有图集有，_draw_state 需回落 idle，否则 photo_sprites
+        KeyError）。分支无关：有人物线时用竹兰照片精灵（最能复现），
+        宝可梦线回落橘猫 Canvas。"""
         from pet import photo_sprites
 
         app = self.app
         app.registry = app._registry()
-        self.assertIn('pikachu', app.registry)
-        app._char_var.set('pikachu')
+        trick_id = next((pid for pid, p in app.registry.items()
+                         if p.get('tricks')), None)
+        if trick_id is None:
+            self.skipTest('本分支没有带专属动作的图集角色')
+        target = 'cynthia' if 'cynthia' in app.registry else 'cat'
+        app._char_var.set(trick_id)
         app._switch_character()
         app.behavior._trick()
         self.assertEqual(app.behavior.state, 'trick')
-        app._char_var.set('cynthia')
+        app._char_var.set(target)
         app._switch_character()
         self.pump(2)                      # 推主循环：崩溃会在此暴露
         self.assertEqual(app.behavior.state, 'idle')
-        self.assertEqual(app.size, photo_sprites.window_size('cynthia'))
+        if target == 'cynthia':
+            self.assertEqual(app.size,
+                             photo_sprites.window_size('cynthia'))
         app._char_var.set('cat')
         app._switch_character()
         self.pump(1)
