@@ -46,94 +46,10 @@ CAT = dict(
     ),
 )
 
-GIRLS = [
-    # ---- 动漫角色（reference/pictures） ----
-    dict(
-        id='nino', name='中野二乃', kind='girl',
-        hair='#E97A5C', hair_dark='#C2543A', style='bob',
-        eye='#4E7FB0', outfit='dress', c1='#8A55B4', c2='#54416E',
-        leg='#46424E', shoes='#35323E',
-        acc='bow', acc_color='#3A3440',
-        phrases=_p(
-            talk=['哼，才不是特意来陪你的', '无聊……陪我说会儿话',
-                  '今天也这么忙吗？真是的'],
-            feed=['给我的？……哼，勉强收下', '哇、是想要很久的这个！才、才没有很高兴呢',
-                 '下次……也不是不可以再送哦'],
-            pet=['呀、摸什么摸！……又不是不喜欢', '头、头饰要歪了啦',
-                 '……就、就再摸一下'],
-            sleep=['我要睡了，不许偷看', '晚安……哼'],
-            wake=['谁允许你叫醒我的？', '哼，我本来就睡够了'],
-            drop=['呀！……看什么看，没站稳而已', '放、放下我！'],
-            switch=['哼，找我有什么事吗？'],
-        ),
-    ),
-    dict(
-        id='lillie', name='莉莉艾', kind='girl',
-        hair='#F4E3A7', hair_dark='#D9BE7A', style='long', braid=True,
-        eye='#7FA86B', outfit='dress', c1='#FBFBF4', c2='#A9C9E2',
-        leg='#F7F5EF', shoes='#EDE9DC',
-        acc='hat', acc_color='#A9C9E2',
-        phrases=_p(
-            talk=['那个……今天也一起加油吧', '这里的一切都好新奇呢',
-                  '大家都很温柔，我也想变勇敢'],
-            feed=['谢、谢谢……我很喜欢', '呜……太开心了吧'],
-            pet=['呀……帽子要歪掉了啦', '唔……谢谢你'],
-            sleep=['晚安，做个好梦……', '我有点困了……晚安'],
-            wake=['咦？我睡着了吗？抱歉……', '早安……嘿嘿'],
-            drop=['呀啊！吓、吓我一跳……', '呜哇——还好接住了'],
-            switch=['请、请多指教哦……'],
-        ),
-    ),
-    dict(
-        id='dawn', name='小光', kind='girl',
-        hair='#46618F', hair_dark='#35496E', style='long',
-        eye='#5B8DB8', outfit='top_skirt', c1='#3A3A42', c2='#F5F2EA',
-        leg=SKIN, shoes='#4A4A52',
-        acc='beanie', acc_color='#F7F5EF', scarf='#D9536F',
-        phrases=_p(
-            talk=['出发出发！今天也要大冒险！', '呼哇——屏幕那头就是新大陆！',
-                  '遇到难关之前，先休息一下嘛'],
-            feed=['哇！谢谢你，我超喜欢！', '收到礼物，元气满满！'],
-            pet=['嘿嘿，被你夸得不好意思啦', '再摸摸头就更有干劲了！'],
-            sleep=['呼啊……明天还要早起呢……', '先眯五分钟……Zzz'],
-            wake=['唔哇！我睡过头了吗？！', '哦哦——精神百倍！'],
-            drop=['哇呀！……安全着陆，成功！', '空中转体，落地——好痛'],
-            switch=['交给我吧，包在我身上！'],
-        ),
-    ),
-    dict(
-        id='cynthia', name='竹兰', kind='girl',
-        hair='#F0D582', hair_dark='#C9AE62', style='buns',
-        eye='#8A929E', outfit='coat', c1='#35323E', c2='#23212A',
-        leg=SKIN, shoes='#2A2730',
-        phrases=_p(
-            talk=['你好，今天也请多指教。', '冠军的假期，就在这里度过吧',
-                  '历史与传说，总是令人着迷呢'],
-            feed=['谢谢，你很有心呢。', '呵呵，很合我的心意'],
-            pet=['呵呵……发髻可别弄乱哦', '被你摸头，还真拿你没办法'],
-            sleep=['那么，失陪片刻……晚安', '夜深了，你也早点休息'],
-            wake=['哎呀……让你久等了', '嗯，休息得刚刚好'],
-            drop=['哎呀，稍微失态了……', '呵，这种程度不算什么'],
-            switch=['呵呵，又见面了。'],
-        ),
-    ),
-    dict(
-        id='lusamine', name='露莎米奈', kind='girl',
-        hair='#F2E9B0', hair_dark='#D4C888', style='xlong',
-        eye='#5FA86F', outfit='dress', c1='#FAFAF2', c2='#D9C463',
-        leg='#F5F5F0', shoes='#FAFAF2',
-        phrases=_p(
-            talk=['真可爱……你也这么觉得吧？', '美丽的东西，要好好珍藏呢',
-                  '遥远的世界，也很让人想念呢'],
-            feed=['谢谢……你真温柔', '这份心意，我很开心'],
-            pet=['呵呵……孩子气的举动呢', '嗯……再靠近一点也可以哦'],
-            sleep=['晚安……愿你有个好梦', '夜色真美，先睡了呢'],
-            wake=['早安……睡得还好吗？', '呵，你一直守着我吗？'],
-            drop=['哎呀……裙摆都乱了', '……真是淘气呢'],
-            switch=['想我了吗？呵呵。'],
-        ),
-    ),
-]
+# 人物预设（中野二乃/莉莉艾/小光/竹兰/露莎米奈）只在 hatch-pet
+# （人物线）分支；本分支是宝可梦线，只保留橘猫 + hatched/ 宝可梦。
+GIRLS = []
+
 
 # id -> 预设（橘猫排最前）；少女预设的 photo 字段指向 assets/ 下
 # 由 tools/build_sprites.py 生成的图片精灵（缺失时回落到 Canvas 绘制）

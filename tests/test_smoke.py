@@ -215,8 +215,8 @@ class SmokeTest(unittest.TestCase):
 
         # 偏好已写入临时文件，重新初始化时应恢复该角色
         self.assertEqual(pet_window.load_pref(), other)
-        self.assertEqual(pet_window.custom.registry()[pet_window.load_pref()]
-                         ['name'], other_name)
+        self.assertEqual(app.registry[pet_window.load_pref()]['name'],
+                         other_name)
 
         # 切回橘猫
         app._char_var.set('cat')
