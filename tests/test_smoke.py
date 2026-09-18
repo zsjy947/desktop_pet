@@ -285,7 +285,7 @@ class SmokeTest(unittest.TestCase):
         app._switch_character()
         self.pump(4)
         self.assertEqual(app.size, 240)
-        self.assertTrue(app._use_photo(app.char))
+        self.assertEqual(app.char['kind'], 'girl')   # 照片精灵角色
         self.assertTrue(app.bubble_text)
         self.assertIn(app.bubble_text, app.char['phrases']['switch'])
         app.behavior.wake()          # 深夜启动会自动打盹，先叫醒再验证
@@ -651,9 +651,13 @@ class SmokeTest(unittest.TestCase):
 
     def test_desired_char_boot_override(self):
         """--char 指定角色：PetApp(desired_char=) 启动即切换。"""
-        app = PetApp(desired_char='pikachu')
-        self.addCleanup(app.root.destroy)
-        self.assertEqual(app.char['id'], 'pikachu')
+        app = self.app          # 借 setUp 的注册表挑一个非橘猫角色
+        other = next((pid for pid in app.registry if pid != 'cat'), None)
+        if other is None:
+            self.skipTest('本分支只有橘猫')
+        app2 = PetApp(desired_char=other)
+        self.addCleanup(app2.root.destroy)
+        self.assertEqual(app2.char['id'], other)
 
     def test_renderers_draw_all_kinds(self):
         """渲染分发：各类型角色 × excited/trick 状态都不抛异常。"""
@@ -661,17 +665,16 @@ class SmokeTest(unittest.TestCase):
         app = self.app
         app.registry = app._registry()
         cv = app.cv
-        pk = next((preset for preset in app.registry.values()
-                   if preset.get('species') == 'pokemon'), None)
-        for char, states in (
-                (app.registry['cat'], ('excited', 'trick', 'idle')),
-                (pk, ('excited',)) if pk else ()):
+        cases = [(app.registry['cat'],
+                  ('excited', 'trick', 'idle'))]
+        for preset in app.registry.values():
+            if preset.get('kind') == 'hatch':
+                cases.append((preset, ('excited', 'trick')))
+        for char, states in cases:
             for state in states:
                 renderers.draw(cv, char=char, state=state, t=0.3, facing=1,
                                particles=[], trick_row=7)
                 self.pump(1)
-        if pk is not None:
-            self.pump(1)
 
     def test_pokemon_trick_state_and_preset(self):
         """宝可梦：trick 随机动作状态 + pet.json tricks 过滤 + 叫声包。"""
