@@ -89,12 +89,15 @@ def wrap_text(cv, text, max_width):
 def draw_bubble(cv, text, size=None, area_h=None):
     """对话气泡：画在宠物上方的专用区域画布里（不遮挡人物）。
 
-    矩形方框、浅蓝边框 + 更浅蓝的半透明底（fill 走 stipple gray75，
-    镂空点露出键色背景 = 桌面），无尾巴箭头，贴区域顶部。
+    圆角矩形 + 底边小尾巴（指向宠物头顶），浅蓝边框 + 更浅蓝的半透明
+    底（fill 走自定义 87.5% 镂空位图，露出键色 = 真透桌面）。尾巴需要
+    竖向空间，调用方给 area_h 时应预留 TAIL_H。
     """
     k = (size or C.WINDOW_SIZE) / C.WINDOW_SIZE
     if not area_h:
         area_h = int(float(cv['height']))
+    tail_h = 9 * k
+    area_h -= tail_h
     f = _font_for(cv)
     lh = f.metrics('linespace')
     max_w = 150 * k
@@ -110,9 +113,26 @@ def draw_bubble(cv, text, size=None, area_h=None):
     x2 = x1 + w
     y1 = 2 * k
     y2 = min(y1 + h, area_h - 2)
-    cv.create_rectangle(x1, y1, x2, y2, fill=C.BUBBLE_BG,
-                        outline=C.BUBBLE_EDGE, width=2,
-                        stipple=_glass_stipple)
+
+    # 圆角矩形（每角 3 点 + smooth 拟合圆弧）
+    r = min(7 * k, w / 4, h / 4)
+    pts = [(x1, y1 + r), (x1, y2 - r), (x1 + r * 0.35, y2 - r * 0.35),
+           (x1 + r, y2), (x2 - r, y2), (x2 - r * 0.35, y2 - r * 0.35),
+           (x2, y2 - r), (x2, y1 + r), (x2 - r * 0.35, y1 + r * 0.35),
+           (x2 - r, y1), (x1 + r, y1), (x1 + r * 0.35, y1 + r * 0.35)]
+    cv.create_polygon(pts, fill=C.BUBBLE_BG, outline=C.BUBBLE_EDGE,
+                      width=2, smooth=True, stipple=_glass_stipple)
+
+    # 小尾巴：底边中点向下的三角，与身体同色；接缝用一块只填充的
+    # 矩形盖住两段描边，视觉上连成一体
+    cx = (x1 + x2) / 2
+    tw = 7 * k
+    cv.create_polygon(cx - tw, y2 - 1, cx + tw, y2 - 1, cx, y2 + tail_h,
+                      fill=C.BUBBLE_BG, outline=C.BUBBLE_EDGE, width=2,
+                      stipple=_glass_stipple)
+    cv.create_rectangle(cx - tw + 1, y2 - 2, cx + tw - 1, y2 + 1,
+                        fill=C.BUBBLE_BG, outline='', stipple=_glass_stipple)
+
     cv.create_text((x1 + x2) / 2, (y1 + y2) / 2, text='\n'.join(lines),
                    font=C.FONT, fill=C.BUBBLE_FG, width=max_w,
                    justify='center')
