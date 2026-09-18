@@ -11,10 +11,19 @@
 ## 运行
 
 ```bash
-python main.py
+python -m pet
 ```
 
-或者直接双击 `run.bat`（Windows，使用 `pythonw` 启动，不带控制台窗口）。
+或者直接双击 `run.bat`（Windows，使用 `pythonw` 启动，不带控制台窗口，
+支持透传参数）。
+
+常用命令行参数：
+
+```bash
+python -m pet --char nino      # 以指定角色启动
+python -m pet --list           # 列出可用角色
+python -m pet --quit           # 退出正在运行的桌宠（单实例）
+```
 
 ## 交互
 

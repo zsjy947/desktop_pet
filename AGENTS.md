@@ -90,27 +90,36 @@ sprigatito。与少女流程的差异：
   蒸馏 LoRA 有洗掉平涂质感的风险且 i2i 耗时不与步数挂钩（省不了）。
 
 ```
-main.py                    入口（Windows DPI 感知）
-run.bat                    双击启动（pythonw）
+main.py                    兼容入口（run.bat 双击用；内部走 pet.__main__）
+run.bat                    双击启动（pythonw，参数透传：run.bat --char nino）
 pet/
+  __main__.py              命令行入口：python -m pet [--char ID|--list|--quit]
+  app.py                   应用组合根：窗口生命周期、交互事件、每帧协调
+  pet_window.py            兼容 shim（re-export PetApp 等，旧脚本不断链）
+  windowing.py             Win32：DPI 感知、置顶压制、单实例互斥锁
+  prefs.py                 用户偏好（~/.desktop_pet.json）+ 跨实例退出标志
+  menu.py                  右键菜单（物种自适应分组 + 角色子菜单 + 自启开关）
+  registry.py              角色表合并：内置 + 自定义 + 图集（同 id 图集替换）
+  renderers.py             渲染分发 + 状态归一化（excited/trick 回落规则）
+  startup.py               开机自启（用户启动文件夹写 VBS，目录可注入测试）
+  fx.py                    粒子生成/推进（爱心/Zzz/特效）
   config.py                全局参数：键色、速度、橘猫配色与台词
   characters.py            内置角色库：外观预设（Canvas 少女）+ 台词包
   custom.py                自定义角色注册表（custom_characters.json，不入库）
-  drawutil.py              共享绘制：镜像助手 / 气泡（独立对话区） / 粒子
+  drawutil.py              共享绘制：镜像助手 / 气泡（圆角+尾巴，独立对话区）/ 粒子绘制
   sprites.py               橘猫 Canvas 逐帧绘制
   girl_sprites.py          Q 版少女参数化绘制（图片帧缺失时的回落）
   photo_sprites.py         图片精灵播放器（assets/ 帧目录）
   hatch_sprites.py         hatch-pet 图集桌宠播放器（hatched/ 图集包）
-  behavior.py              状态机 idle/walk/sleep/drag/fall/happy/excited
+  behavior.py              状态机 idle/walk/sleep/drag/fall/happy/excited/trick
   screens.py               EnumDisplayMonitors + 工作区（GetMonitorInfoW）
-  pet_window.py            主窗口：透明置顶、右键菜单、角色切换、主循环
 tools/
   build_sprites.py         高清精灵构建（抠图→清理→伪姿势帧，240px）
   hatch_pet.py             hatch-pet 生成管线（z-image-turbo 生姿势→图集）
   comfy_hatch.py           本地 ComfyUI 生图后端（gen 单张 / atlas 图集组装）
   add_character.py         角色添加接口（CLI / 可编程）
   character_server.py      本地上传网页 http://127.0.0.1:8765
-tests/test_smoke.py        19 项冒烟测试（会短暂弹窗）
+tests/test_smoke.py        冒烟测试（会短暂弹窗）
 assets/                    高清精灵帧（入库，5 个动漫角色；三次元与 yui 已移除）
 hatched/<id>/              图集桌宠包：pet.json + spritesheet.png（入库）；
                            build/ 与 qa/ 为生成中间产物（不入库）
@@ -118,12 +127,22 @@ localgen/                  本地生图评估产物与报告（REPORT.md，**不
 reference/pictures/        用户提供的参考图（**不入库**）
 custom_characters.json     接口生成的自定义角色（**不入库**）
 ~/.desktop_pet.json        用户上次选择的角色（运行时写入）
+~/.desktop_pet.quit        跨实例退出标志（python -m pet --quit 写入）
 ```
+
+### 启动方式（2026-09-19 重构）
+
+- `run.bat` 双击启动（pythonw 无控制台，参数透传）。
+- `python -m pet`：`--char ID` 以指定角色启动；`--list` 列出角色；
+  `--quit` 请求运行中实例退出（单实例互斥锁 + 退出标志文件实现，
+  重复启动第二个实例会直接退出）。
+- 开机自启：右键菜单"🚀 开机自启"勾选，往用户启动文件夹写一个
+  `desktop_pet_autostart.vbs`（pythonw 隐藏启动）；实现见 pet/startup.py。
 
 ## 2. 新电脑环境搭建
 
 1. Python 3.10+（tkinter 必须有；Windows 自带）。
-2. 运行宠物：`python main.py` 或 `run.bat`。仅此时不需要任何第三方库。
+2. 运行宠物：`run.bat` 双击，或 `python -m pet`（可选 --char/--list/--quit，见 §1 启动方式）。仅此时不需要任何第三方库。
 3. 开发/构建才需要：
    ```bash
    pip install pillow numpy requests "rembg[cpu]"
@@ -140,7 +159,7 @@ custom_characters.json     接口生成的自定义角色（**不入库**）
      https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-anime.onnx
    ```
    模型选择：真人照片 `u2net`，动漫插画 `isnet-anime`。
-5. 测试：`python -m unittest tests.test_smoke -v`（19 项；弹一下测试窗口属正常）。
+5. 测试：`python -m unittest tests.test_smoke -v`（28 项；弹一下测试窗口属正常）。
 
 ## 3. 构建与角色流程
 
