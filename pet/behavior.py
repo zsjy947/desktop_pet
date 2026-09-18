@@ -93,6 +93,11 @@ class Behavior:
         self.state_until = time.monotonic() + self.tricks[self._trick_i][
             'duration']
 
+    def perform_trick(self):
+        """公开入口（菜单"表演一个动作"）：空闲/走路时才触发。"""
+        if self.tricks and self.state in ('idle', 'walk'):
+            self._trick()
+
     def start_drag(self):
         self.state = 'drag'
 

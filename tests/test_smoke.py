@@ -5,6 +5,7 @@
 （会短暂弹出一个测试窗口，属正常现象。）
 """
 import json
+import sys
 import tempfile
 import time
 import unittest
@@ -17,12 +18,17 @@ from pet.pet_window import PetApp
 
 class SmokeTest(unittest.TestCase):
     def setUp(self):
-        # 偏好文件指向临时目录，避免测试污染用户主目录
+        # 偏好/退出标志文件指向临时目录，避免测试污染用户主目录
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         import os
-        pref = os.path.join(tmp.name, 'pet_pref.json')
-        patcher = mock.patch.object(pet_window, '_PREF_FILE', pref)
+        from pet import prefs
+        patcher = mock.patch.object(prefs, '_PREF_FILE',
+                                    os.path.join(tmp.name, 'pet_pref.json'))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        patcher = mock.patch.object(prefs, 'QUIT_FLAG',
+                                    os.path.join(tmp.name, 'pet_quit.flag'))
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -546,6 +552,126 @@ class SmokeTest(unittest.TestCase):
         app._char_var.set('cat')
         app._switch_character()
         self.pump(1)
+
+    def test_startup_autostart_cycle(self):
+        """开机自启：enable/disable/is_enabled 往返 + VBS 内容标记。"""
+        import os
+        from pet import startup
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.assertFalse(startup.is_enabled(override_dir=tmp.name))
+        path = startup.enable(tmp.name, python=sys.executable,
+                              override_dir=tmp.name)
+        self.assertTrue(os.path.exists(path))
+        self.assertTrue(startup.is_enabled(override_dir=tmp.name))
+        with open(path, encoding='utf-8') as f:
+            content = f.read()
+        self.assertIn(startup.MARKER, content)
+        self.assertIn('main.py', content)
+        startup.disable(override_dir=tmp.name)
+        self.assertFalse(startup.is_enabled(override_dir=tmp.name))
+
+    def test_single_instance_lock(self):
+        """单实例互斥锁：二次获取失败，释放后可再获取。"""
+        if sys.platform != 'win32':
+            self.skipTest('仅 Windows 有互斥锁实现')
+        from pet import windowing
+        name = 'DesktopPet.TestLock.smoke'
+        handle = windowing.acquire_lock(name)
+        self.assertIsNotNone(handle)
+        try:
+            self.assertTrue(windowing.lock_exists(name))
+            self.assertIsNone(windowing.acquire_lock(name))
+        finally:
+            windowing.release_lock(handle)
+        self.assertFalse(windowing.lock_exists(name))
+
+    def test_quit_flag_roundtrip(self):
+        """退出标志：写入后可被读取一次（读即清除）。"""
+        from pet import prefs
+        self.assertFalse(prefs.quit_pending())
+        self.assertTrue(prefs.write_quit_flag())
+        self.assertTrue(prefs.quit_pending())
+        self.assertFalse(prefs.quit_pending())
+
+    def test_menu_structure_by_species(self):
+        """右键菜单按物种分组：宝可梦有表演动作无聊天，猫科有喂食。"""
+        from pet import menu as pet_menu
+
+        def labels_of(m):
+            return ' '.join(m.entrycget(i, 'label')
+                            for i in range(m.index('end') + 1)
+                            if m.type(i) != 'separator')
+
+        app = self.app
+        app.registry = app._registry()
+        pk = next((p for p, preset in app.registry.items()
+                   if preset.get('species') == 'pokemon'), None)
+        if pk is None:
+            self.skipTest('本分支没有宝可梦角色')
+
+        app._char_var.set(pk)
+        app._switch_character()
+        m = pet_menu.build(app)
+        labels = labels_of(m)
+        self.assertIn('表演一个动作', labels)
+        self.assertIn('喂个树果', labels)
+        self.assertNotIn('聊聊天', labels)
+        self.assertIn('切换角色', labels)
+        self.assertIn('开机自启', labels)
+        self.assertIn('退出', labels)
+        m.destroy()
+
+        app._char_var.set('cat')
+        app._switch_character()
+        m = pet_menu.build(app)
+        labels = labels_of(m)
+        self.assertIn('喂食', labels)
+        self.assertIn('摸摸头', labels)
+        self.assertIn('聊聊天', labels)
+        self.assertNotIn('表演一个动作', labels)
+        m.destroy()
+
+    def test_perform_trick_menu_action(self):
+        """✨ 表演一个动作：菜单动作应让宝可梦进入 trick 状态。"""
+        app = self.app
+        app.registry = app._registry()
+        pk = next((p for p, preset in app.registry.items()
+                   if preset.get('species') == 'pokemon'), None)
+        if pk is None:
+            self.skipTest('本分支没有宝可梦角色')
+        app._char_var.set(pk)
+        app._switch_character()
+        self.pump(2)
+        app.behavior.wake()      # 深夜自动打盹时先叫醒
+        app._perform_trick()
+        self.assertEqual(app.behavior.state, 'trick')
+        app._char_var.set('cat')
+        app._switch_character()
+
+    def test_desired_char_boot_override(self):
+        """--char 指定角色：PetApp(desired_char=) 启动即切换。"""
+        app = PetApp(desired_char='pikachu')
+        self.addCleanup(app.root.destroy)
+        self.assertEqual(app.char['id'], 'pikachu')
+
+    def test_renderers_draw_all_kinds(self):
+        """渲染分发：各类型角色 × excited/trick 状态都不抛异常。"""
+        from pet import renderers
+        app = self.app
+        app.registry = app._registry()
+        cv = app.cv
+        pk = next((preset for preset in app.registry.values()
+                   if preset.get('species') == 'pokemon'), None)
+        for char, states in (
+                (app.registry['cat'], ('excited', 'trick', 'idle')),
+                (pk, ('excited',)) if pk else ()):
+            for state in states:
+                renderers.draw(cv, char=char, state=state, t=0.3, facing=1,
+                               particles=[], trick_row=7)
+                self.pump(1)
+        if pk is not None:
+            self.pump(1)
 
     def test_pokemon_trick_state_and_preset(self):
         """宝可梦：trick 随机动作状态 + pet.json tricks 过滤 + 叫声包。"""
