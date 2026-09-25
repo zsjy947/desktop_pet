@@ -359,6 +359,13 @@ class PetApp:
         except (OSError, RuntimeError):
             self._autostart_var.set(not self._autostart_var.get())
 
+    def _autostart_checked(self):
+        """菜单 spec 的自启勾选状态（tk 由变量承载）。"""
+        return bool(self._autostart_var.get())
+
+    def _quit(self):
+        self.root.destroy()
+
     # ---------------- 气泡与粒子 ----------------
     def _say(self, text):
         self.bubble_text = text

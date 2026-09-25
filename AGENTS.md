@@ -9,13 +9,24 @@
 > 图集×5；之前的人物（少女/竹兰照片精灵/芒果猫）在 `hatch-pet`
 > （人物线）分支。运行时代码两分支共享，角色内容不同。
 
-Python 标准库（tkinter）桌面宠物，运行时**零第三方依赖**；图片精灵的
-生成在开发期完成（pillow + rembg）。多显示器漫游、置顶（不被任务栏
-遮挡）、右键菜单弹出在宠物头顶（可微盖）。本分支角色 6 个：
-橘猫 + **宝可梦图集×5（皮卡丘/伊布/谢米陆上形态/比克提尼/新叶喵，
-2026-09-13 上线，见 §3.1）**。
-图集与旧角色同 id 时图集**替换**旧角色（渲染走图集、名字台词沿用旧
-preset，见 pet_window._registry）。
+桌面宠物，**双渲染层**（2026-09-25 重构，动机见 §3.2 诊断）：
+- **Qt（主）**：PySide6 逐像素透明窗口（`WA_TranslucentBackground` +
+  setMask 点击穿透）。帧推进 =「时长累加器 + 实际 dt」（帧边界与 tick
+  严格对齐）；呼吸 = 整帧 scaleY 微变形（锚脚底）、落地 squash 挤压、
+  朝向运行时镜像、真半透明气泡、QPainterPath 自绘软粒子。运行时依赖
+  唯一新增 PySide6（`pip install PySide6`）。
+- **tk（兜底，零依赖）**：原 tkinter 键色窗口原样保留，未装 PySide6
+  或 `--renderer tk` 时启用；anims/ v2 资产 tk 不支持（宝可梦自动回落
+  hatched 图集）。
+
+多显示器漫游、置顶（不被任务栏遮挡）、右键菜单弹出在宠物头顶（可微
+盖）两层通用。本分支角色 7 个：橘猫（Canvas 程序化）+ **宝可梦×5（皮卡丘/伊布/谢米陆上
+形态/比克提尼/新叶喵）**——2026-09-25 起全部换 **Pokémon Showdown
+官方动画**（25~33fps 透明 GIF 导入，见 §3.2），tricks 专属动作随图集
+退役（tk 层 hatched/ 包仍带 tricks 兜底）。资产两级：`anims/` **v2 帧
+序列**（主，Qt 用，软 alpha 保留）与 `hatched/` 图集（tk 用；Qt 也能
+直接播图集）。anims 与 hatched/custom 同 id 时 **anims 优先**（图片
+替换语义，名字台词沿用旧 preset，见 pet/registry.py）。
 **绿幕流程（浅色服装角色必用）**：白底+空腔色距判罚会把白裙/白帽
 当成"封闭浅色空腔"大面积抠掉（莉莉艾首版白裙全没），色距法对白色系
 设计不成立。改为生图直接出**纯绿幕底**（prompt: solid bright green
@@ -32,8 +43,8 @@ background, flat chroma key green screen），键控天然区分角色与背景�
 状态播 pet.json tricks 指定的图集行 7/8，配叫声气泡 + 特效粒子
 spark/leaf/flower/fire/star，见 pet_window._tricks/_spawn_fx）。
 双击同理（人=打招呼，猫=摸头，宝可梦=打招呼）。气泡为矩形浅蓝半透
-明方框（边框 #5DADE2、底 #D6EAF8 走 pet/glass.xbm 87.5% 镂空露出
-键色=真透桌面），无尾巴箭头，对话区压矮到两行贴住头顶。
+明方框（边框 #5DADE2、底 #D6EAF8），无尾巴箭头，对话区压矮到两行贴
+住头顶。tk 层半透明走 pet/glass.xbm 87.5% 镂空；Qt 层是真 alpha。
 
 ## 3.1 宝可梦图集流程（2026-09-13）
 
@@ -83,38 +94,143 @@ sprigatito。与少女流程的差异：
 - 决定**不下载新模型**：NoobAI 对 5 只宝可梦还原全部达标，Hyper-SD
   蒸馏 LoRA 有洗掉平涂质感的风险且 i2i 耗时不与步数挂钩（省不了）。
 
+
+## 3.2 Qt 运行时 + 动效根治 + 云端管线（2026-09-25）
+
+### 闪帧/画质差的诊断结论（三层根因，全部核实过行号）
+
+1. **素材无时序连贯（主因）**：逐帧独立 i2i（denoise 0.3~0.5）从同一
+   init 去噪，帧间内容各自漂移；每动作仅 4~8 帧、110~280ms/帧。
+2. **蒙版逐帧抖动**：绿幕键控 → alpha 二值化 → erode 3px，每帧边缘
+   像素独立抖，表现为人形轮廓"闪"。
+3. **播放层缺陷**：`_phase` 绝对时间取模与 33ms tick 不对齐（跳帧/
+   重复帧）；每 tick 无条件 delete('all')×2 + geometry + SetWindowPos，
+   键色窗口每秒整帧重合成 30 次。
+4. **画质差** = NoobAI-XL 上限低（base 踩坑率 ~60%）+ 键色窗口只认
+   二值 alpha（软边/阴影/光效全被砍，绿幕/erode/空腔判罚整条链都在
+   伺服它）。**结论：键色窗口是万恶之源。**
+
+### Qt 层的解法（pet/qt_app.py / qt_render.py / cat_qt.py）
+
+- `qt_app.py`：组合根。Frameless + TranslucentBackground + Tool（不进
+  任务栏）+ StaysOnTop；QTimer 30Hz；位移/下落按实际 dt 换算
+  （config 的 per-frame 常量 ×FPS 换算成 px/s）；落地 squash 脉冲；
+  QMenu 消费 menu.spec()（与 tk build 同一套分组，menu.py 重构）。
+- `qt_render.py`：Renderer 三后端（anim/hatch/cat）。advance() 播放头
+  按逐帧时长累加；paint() 绘制帧 + 变换 + 粒子；body_region() 出命中
+  蒙版。橘猫是 sprites.py 的 QPainter 移植（cat_qt.py，适配器复用
+  make_mirror 与 sprites 的眼睛/睡姿助手）。
+- **蒙版（点击穿透）**：numpy 行程扫描帧 alpha → QRegion（横向 run +
+  纵向同行程合并成条带矩形），app 层并上气泡多边形与粒子方块后
+  setMask。**必须 translated(0, 对话区高)**（踩过：忘平移=宠物下半被
+  裁，2026-09-25 实测）。
+- **Qt/PySide6 踩坑（6.11 实测）**：
+  - `QBitmap.fromImage` 会 **access violation**（offscreen 必崩）——
+    蒙版别走 QBitmap，用行程扫描 QRegion。
+  - `QRegion(QPainterPath)` C++ 有、**Python 绑定没有**——用
+    `path.toFillPolygon().toPolygon()` 转 QPolygon。
+  - `QImage(bytes)` 构造是**浅引用**，临时 bytes 回收后读悬空内存——
+    立即 `.copy()`。
+  - `QMenu.exec` 的 monkeypatch **不生效**（shiboken 重载在 C++ 层），
+    测试菜单要用真实 exec + 嵌套循环里 QTimer 关菜单。
+  - Qt6 自带 per-monitor DPI 感知，**不要再调** windowing 的
+    SetProcessDpiAwareness（混用会坐标错乱）；qt 路径显示器用
+    QScreen.availableGeometry()（逻辑坐标），tk 路径才用 screens.py。
+
+### anims/ v2 资产格式（Qt 播放的主资产）
+
+`anims/<id>/anim.json + frames/*.png`：逐帧 PNG（**软 alpha 保留**，
+不再二值化/erode）、朝向运行时镜像（不再烘焙左右两行）。schema 见
+pet/anims.py 模块注释（id/species/window/foot/phrases/tricks(state 键)/
+states{idle,walk(flip_left),sleep,happy,jump,trick0…}，durations 逐帧
+ms 或 fps）。状态回落与图集一致（excited→happy、fall/drag→jump、
+缺行→idle，sleep 无行→定格 idle 第 0 帧）。
+
+- `python tools/convert_atlas.py [id...]`：hatched/ 图集一键转 v2
+  （行 1→walk+flip_left、行 2 丢弃、sleep_row→sleep、tricks.row→
+  trick{i}，时长沿用 ROW_SPECS）。**2026-09-25 起 5 只宝可梦已整体
+  换 Showdown 动画，转换包不再使用**（工具保留，图集转换需求仍可用）。
+- `python tools/import_gif.py --gif x.gif --id y --name 名`：GIF→v2
+  （NEAREST 整数倍放大；脚底按全帧最低不透明行贴合；idle/walk/happy
+  共用，sleep 定格首帧）。
+- `python tools/import_showdown.py [id...]`：**宝可梦主力管线**——下载
+  Pokémon Showdown ani 动画（play.pokemonshowdown.com/sprites/ani/
+  <id>.gif，25~33fps 透明）→ 导入 v2 → 从 hatched/<id>/pet.json 继承
+  displayName/species/phrases（叫声包用户无感知）。GIF 缓存在
+  localgen/showdown/。tricks 随图集退役（GIF 无对应动画帧），菜单在
+  behavior.tricks 为空时自动隐藏"✨ 表演一个动作"。
+- `python tools/qt_smoke_shot.py <id> <out.png>`：后台起宠物按窗口
+  标题找 HWND 截图（驱动进程自己 SetProcessDpiAwareness(2)）。
+- **双重镜像踩坑（2026-09-25）**：走路朝左时精灵被裁得只剩碎片——
+  `_anim_image` 在 flip 时已返回镜像帧图（蒙版按它构建），paint 又叠
+  一次 QTransform 镜像 → 显示与蒙版左右错位，不对称帧 38% 像素落在
+  蒙版外被裁。修复 = 镜像只在帧图层做（与蒙版同源），paint 不再套
+  镜像变换；回归测试
+  `test_mask_covers_painted_walk_both_facings` 断言两朝向 100% 覆盖。
+
+### 云端生图/生视频管线（下一轮执行，本轮只定设计）
+
+调研结论（2026-09 价格，以控制台为准；渠道**混合 PoC 后定主力**）：
+
+| 用途 | 候选 | 参考价 | 备注 |
+|---|---|---|---|
+| 定稿图 | 火山方舟 Seedream 4.0/4.5 | ¥0.2/张 | 参考图一致性好、国内直付 |
+| 定稿图 | OpenAI gpt-image | $0.02~0.17/张 | `background=transparent` 原生真透明底 |
+| 定稿图 | Gemini Nano Banana Pro | ~$0.24/张 | 编辑一致性最强、14 参考图；原生透明不可靠、SynthID 水印 |
+| 动画 | 火山方舟 Seedance 1.0 pro | ¥3.67/5s·1080p | 图生视频时序天然连贯 |
+| 动画 | 可灵 / Vidu | 资源包计费 | Vidu 支持首尾帧（利于无缝循环） |
+
+**动画主路线 = 图生视频抽帧**：定稿图作首帧 → 5s 绿幕/蓝幕视频 →
+ffmpeg 抽帧 12~16fps → 本地键控（软 alpha）+ alpha 时域中值平滑 +
+首帧 bbox 锚定 → 每动作 12~24 帧（成本 ¥1~4/动作）。兜底 = 关键帧
+4~6 张 + 本地 RIFE 插帧到 24fps（大幅动作插帧易糊）。API Key 走
+环境变量；接入代码 `tools/cloud_hatch.py`（adapter 换渠道），后处理
+复用 hatch_pet 的键控/QA。本轮（用户决策）**暂不接付费 API**。
+
 ```
 main.py                    兼容入口（run.bat 双击用；内部走 pet.__main__）
 run.bat                    双击启动（pythonw，参数透传：run.bat --char pikachu）
 pet/
-  __main__.py              命令行入口：python -m pet [--char ID|--list|--quit]
-  app.py                   应用组合根：窗口生命周期、交互事件、每帧协调
+  __main__.py              命令行入口：python -m pet [--char|--list|--quit|--renderer]
+  qt_app.py                Qt 组合根：逐像素透明置顶窗、dt 主循环、拖拽/菜单
+  qt_render.py             Qt 渲染器：三后端（anim/hatch/cat）+ 播放头 +
+                           变换（呼吸/挤压/镜像）+ 软粒子 + 半透明气泡 + 蒙版
+  cat_qt.py                橘猫 QPainter 移植（适配 tk Canvas 图元签名）
+  anims.py                 anims/ v2 资产加载器（anim.json schema 注释在此）
+  app.py                   tk 组合根（兜底渲染层的窗口生命周期/交互/每帧协调）
   pet_window.py            兼容 shim（re-export PetApp 等，旧脚本不断链）
-  windowing.py             Win32：DPI 感知、置顶压制、单实例互斥锁
+  windowing.py             Win32：DPI 感知（tk 用）、置顶压制、单实例互斥锁
   prefs.py                 用户偏好（~/.desktop_pet.json）+ 跨实例退出标志
-  menu.py                  右键菜单（物种自适应分组 + 角色子菜单 + 自启开关）
-  registry.py              角色表合并：内置 + 自定义 + 图集（同 id 图集替换）
-  renderers.py             渲染分发 + 状态归一化（excited/trick 回落规则）
+  menu.py                  右键菜单：spec() 后端无关结构 + build() tk 渲染端
+                           （Qt 端由 qt_app 消费同一 spec）
+  registry.py              角色表合并：内置 + 自定义 + 图集 + anims（优先级
+                           anims > hatched；include_anims=True 才带 anims）
+  renderers.py             tk 渲染分发 + 状态归一化（excited/trick 回落规则）
   startup.py               开机自启（用户启动文件夹写 VBS，目录可注入测试）
-  fx.py                    粒子生成/推进（爱心/Zzz/特效）
+  fx.py                    粒子生成/推进（爱心/Zzz/特效；绘制分 tk/Qt 两层）
   config.py                全局参数：键色、速度、橘猫配色与台词
   characters.py            内置角色库：外观预设（Canvas 少女）+ 台词包
   custom.py                自定义角色注册表（custom_characters.json，不入库）
-  drawutil.py              共享绘制：镜像助手 / 气泡（圆角+尾巴，独立对话区）/ 粒子绘制
-  sprites.py               橘猫 Canvas 逐帧绘制
+  drawutil.py              tk 绘制共享：镜像助手 / 气泡（圆角+尾巴）/ 粒子
+  sprites.py               橘猫 Canvas 逐帧绘制（tk 兜底层）
   girl_sprites.py          Q 版少女参数化绘制（图片帧缺失时的回落）
   photo_sprites.py         图片精灵播放器（assets/ 帧目录）
-  hatch_sprites.py         hatch-pet 图集桌宠播放器（hatched/ 图集包）
+  hatch_sprites.py         hatch-pet 图集桌宠播放器（tk 层；Qt 层直接读同一图集）
   behavior.py              状态机 idle/walk/sleep/drag/fall/happy/excited/trick
-  screens.py               EnumDisplayMonitors + 工作区（GetMonitorInfoW）
+  screens.py               EnumDisplayMonitors + 工作区（tk 层用；Qt 用 QScreen）
 tools/
+  import_showdown.py       Pokémon Showdown 动画批量导入（宝可梦主力管线）
+  convert_atlas.py         hatched/ 图集 → anims/ v2 资产一键转换
+  import_gif.py            GIF → anims/ v2（脚底贴合/整数倍放大）
+  qt_smoke_shot.py         Qt 运行时截图冒烟（按窗口标题找 HWND）
   build_sprites.py         高清精灵构建（抠图→清理→伪姿势帧，240px）
   hatch_pet.py             hatch-pet 生成管线（z-image-turbo 生姿势→图集）
   comfy_hatch.py           本地 ComfyUI 生图后端（gen 单张 / atlas 图集组装）
   add_character.py         角色添加接口（CLI / 可编程）
   character_server.py      本地上传网页 http://127.0.0.1:8765
-tests/test_smoke.py        冒烟测试（会短暂弹窗）
-assets/                    高清精灵帧（入库，人物线分支）
+tests/test_smoke.py        冒烟测试（tk 层，会短暂弹窗）
+tests/test_anim_pack.py    v2 资产 + Qt 渲染层测试（offscreen，不弹窗）
+anims/<id>/                v2 动画资产：anim.json + frames/*.png（入库）
 hatched/<id>/              图集桌宠包：pet.json + spritesheet.png（入库）；
                            build/ 与 qa/ 为生成中间产物（不入库）
 localgen/                  本地生图评估产物与报告（REPORT.md，**不入库**）
@@ -124,25 +240,28 @@ custom_characters.json     接口生成的自定义角色（**不入库**）
 ~/.desktop_pet.quit        跨实例退出标志（python -m pet --quit 写入）
 ```
 
-### 启动方式（2026-09-19 重构）
+### 启动方式（2026-09-25 更新）
 
 - `run.bat` 双击启动（pythonw 无控制台，参数透传）。
 - `python -m pet`：`--char ID` 以指定角色启动；`--list` 列出角色；
   `--quit` 请求运行中实例退出（单实例互斥锁 + 退出标志文件实现，
-  重复启动第二个实例会直接退出）。
+  重复启动第二个实例会直接退出）；`--renderer qt|tk` 指定渲染层
+  （缺省 qt，未装 PySide6 或角色不支持时自动回落 tk 并提示）。
 - 开机自启：右键菜单"🚀 开机自启"勾选，往用户启动文件夹写一个
   `desktop_pet_autostart.vbs`（pythonw 隐藏启动）；实现见 pet/startup.py。
 
 ## 2. 新电脑环境搭建
 
 1. Python 3.10+（tkinter 必须有；Windows 自带）。
-2. 运行宠物：`run.bat` 双击，或 `python -m pet`（可选 --char/--list/--quit，见 §1 启动方式）。仅此时不需要任何第三方库。
+2. 运行宠物：`run.bat` 双击，或 `python -m pet`（可选
+   --char/--list/--quit/--renderer，见 §1 启动方式）。tk 兜底层不需要
+   任何第三方库；**Qt 主层需要** `pip install PySide6`（唯一运行时依赖）。
 3. 开发/构建才需要：
    ```bash
    pip install pillow numpy requests "rembg[cpu]"
    ```
    （hatch_pet.py 生成管线只需 pillow+numpy+requests；rembg 仅
-   build_sprites/add_character 抠参考图照片时用到。）
+   build_sprites/add_character 抠参考图照片时用到；Qt 测试另需 PySide6。）
 4. **rembg 模型下载**：首次调用会从 GitHub 下载 onnx 模型；若遇
    SSL 证书错误（常见于企业代理），用 curl 绕过并放到 rembg 的模型目录：
    ```bash
@@ -153,7 +272,9 @@ custom_characters.json     接口生成的自定义角色（**不入库**）
      https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-anime.onnx
    ```
    模型选择：真人照片 `u2net`，动漫插画 `isnet-anime`。
-5. 测试：`python -m unittest tests.test_smoke -v`（28 项；弹一下测试窗口属正常）。
+5. 测试：`python -m unittest tests.test_smoke tests.test_anim_pack -v`
+   （42 项；test_smoke 会短暂弹 tk 测试窗口属正常，test_anim_pack 走
+   Qt offscreen 不弹窗）。
 
 ## 3. 构建与角色流程
 
@@ -197,7 +318,7 @@ custom_characters.json     接口生成的自定义角色（**不入库**）
 
 ## 4. 关键约束与踩坑（务必记住）
 
-**透明窗口**
+**透明窗口（tk 键色层；Qt 层无此约束，见 §3.2）**
 - 透明用 `-transparentcolor`（KEY_COLOR=#010101）键色方案：alpha 不是
   二值的像素会先与近黑键色混合再上屏 → 暗边。**所有精灵帧的 alpha 必须
   二值化**，并做边缘渗色（rembg 输出的 alpha 是软 matte，几乎没有 255，
@@ -213,7 +334,7 @@ custom_characters.json     接口生成的自定义角色（**不入库**）
   按用户要求从"窗顶上方"下移拉近）。高度按 26px/项估算（实测 ~22px，
   宁大勿小——估小了菜单会沉到宠物后面被键色窗口盖住）。
 
-**精灵帧**
+**精灵帧（tk 键色层）**
 - tkinter 的 PhotoImage **不能运行时翻转/旋转** → 所有镜像与姿势变换
   在构建期烘焙（每状态 [朝右×N, 朝左×N]）。
 - 帧必须铺满整个窗口画布（240×240），运行时 `create_image` 整帧贴。
@@ -322,10 +443,14 @@ custom_characters.json     接口生成的自定义角色（**不入库**）
 - `pokemon`：**宝可梦线**（本分支）——基于 hatch-pet，只保留 5 只
   宝可梦图集（皮卡丘/伊布/谢米/比克提尼/新叶喵）+ 叫声交互 + 专属
   随机动作；人物内容（hatched 人物包/照片精灵帧/characters.py 人物
-  预设）已移除，运行时代码与人物线共享
+  预设）已移除，运行时代码与人物线共享。
+  2026-09-25 增：Qt 渲染层（qt_app/qt_render/cat_qt）+ anims/ v2 资产
+  + convert_atlas/import_gif/import_showdown 工具 + tests/test_anim_pack.py
+  （43 项测试 = 28 tk 冒烟 + 15 资产/Qt）；5 只宝可梦全部换 Showdown
+  动画（tricks 随图集退役，tk 层兜底不变）
 - `pixel-art` 已废弃删除（2026-09，本地与远程均已删；像素方案用户不满意）
 - 不入库：`reference/`、`custom_characters.json`、`tmp_*`、
-  `hatched/*/build|qa/`、用户偏好
+  `hatched/*/build|qa/`、`localgen/`、用户偏好
 - 提交历史（概要）：
   1. `49ea981` 角色系统（Canvas Q 版少女 + 台词包 + 菜单上方弹出）
   2. `d6ebbf8` 高清图片精灵模式（构建管线 + 运行时播放器）
@@ -338,17 +463,20 @@ custom_characters.json     接口生成的自定义角色（**不入库**）
 
 ## 7. 后续方向（未做）
 
+- **云端生图/生视频管线（下一个大项）**：图生视频抽帧主路线 +
+  关键帧 RIFE 插帧兜底，渠道混合 PoC 后定主力；设计已定稿见 §3.2
+  "云端管线"小节（价格表 / 后处理链 / adapter 规划 / API Key 环境变量）。
+  本轮（2026-09-25）按用户决策暂不接付费 API，Qt 层已就位等待素材。
+- **Qt 层收尾**：girl/custom 照片角色不支持 Qt（回落 tk）；tk 层冻结名
+  义维护（只修不加）。菜单"关于"提示当前渲染层未做。
 - 三次元（真人）路线**已暂停**：2026-09-05 按需求把 6 位明星角色从宠物
   移除（characters.py preset + assets/ 帧 + hatched/guan 图集一起删），
   reference/pictures 里的真人照片保留；等找到更满意的写实生图方法再回加。
   评估数据与配方都在 localgen/REPORT.md。动漫侧：lillie/dawn/
-  lusamine 已绿幕流程上线；yui（粉色和服锚点 3 连未中）与 cynthia
-  （大衣锚点未中）暂缓，重试需强色/服装锚（如 (pink kimono:1.3)、
-  fur-trimmed coat draped on shoulders）。
-- 真·多姿势/更强一致性：给 hatch 管线接支持参考图的生图（image editing /
-  IP-Adapter）或 ControlNet OpenPose（SD1.5 版 1.4GB，4GB 显存可跑），
-  消除行间漂移、做出真步态；动漫形象一致性较好，真人会漂移。
-- 逐像素透明窗口：换 PySide6（`WA_TranslucentBackground`）或 ctypes
-  UpdateLayeredWindow（可零运行时依赖但气泡文字需自绘合成）。
+  lusamine 已绿幕流程上线（在 hatch-pet 分支）；yui/cynthia 暂缓。
+- 真·多姿势/更强一致性：云端图生视频主路线落地后此问题自动消解；
+  本地 ControlNet OpenPose 方案搁置。
+- ~~逐像素透明窗口~~ **已做**（2026-09-25，PySide6 WA_TranslucentBackground，
+  见 §3.2）。
 - hatch 行的深度利用：waiting（等人）接"有话对你说"、running（专注
   干活）接工作状态等，让桌宠状态语义更丰富。

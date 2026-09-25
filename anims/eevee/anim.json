@@ -1,0 +1,216 @@
+{
+ "id": "eevee",
+ "displayName": "伊布",
+ "description": "伊布（Q版宝可梦 · 绿幕流程 · 专属随机动作）",
+ "species": "pokemon",
+ "window": 204,
+ "foot": 200,
+ "phrases": {
+  "talk": [
+   "伊布～？",
+   "伊——布。"
+  ],
+  "feed": [
+   "伊布～！伊布伊布！",
+   "布伊～！"
+  ],
+  "pet": [
+   "伊布～伊布～",
+   "伊——布！"
+  ],
+  "sleep": [
+   "伊……布……",
+   "伊布……Zzz"
+  ],
+  "wake": [
+   "伊布！伊布！"
+  ],
+  "drop": [
+   "伊呀——布！"
+  ],
+  "switch": [
+   "伊布～！",
+   "伊——布～"
+  ]
+ },
+ "tricks": [],
+ "states": {
+  "idle": {
+   "frames": [
+    "idle_0.png",
+    "idle_1.png",
+    "idle_2.png",
+    "idle_3.png",
+    "idle_4.png",
+    "idle_5.png",
+    "idle_6.png",
+    "idle_7.png",
+    "idle_8.png",
+    "idle_9.png",
+    "idle_10.png",
+    "idle_11.png",
+    "idle_12.png",
+    "idle_13.png",
+    "idle_14.png",
+    "idle_15.png",
+    "idle_16.png",
+    "idle_17.png",
+    "idle_18.png",
+    "idle_19.png",
+    "idle_20.png",
+    "idle_21.png",
+    "idle_22.png",
+    "idle_23.png",
+    "idle_24.png"
+   ],
+   "durations": [
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40
+   ]
+  },
+  "walk": {
+   "frames": [
+    "idle_0.png",
+    "idle_1.png",
+    "idle_2.png",
+    "idle_3.png",
+    "idle_4.png",
+    "idle_5.png",
+    "idle_6.png",
+    "idle_7.png",
+    "idle_8.png",
+    "idle_9.png",
+    "idle_10.png",
+    "idle_11.png",
+    "idle_12.png",
+    "idle_13.png",
+    "idle_14.png",
+    "idle_15.png",
+    "idle_16.png",
+    "idle_17.png",
+    "idle_18.png",
+    "idle_19.png",
+    "idle_20.png",
+    "idle_21.png",
+    "idle_22.png",
+    "idle_23.png",
+    "idle_24.png"
+   ],
+   "durations": [
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40
+   ],
+   "flip_left": true
+  },
+  "happy": {
+   "frames": [
+    "idle_0.png",
+    "idle_1.png",
+    "idle_2.png",
+    "idle_3.png",
+    "idle_4.png",
+    "idle_5.png",
+    "idle_6.png",
+    "idle_7.png",
+    "idle_8.png",
+    "idle_9.png",
+    "idle_10.png",
+    "idle_11.png",
+    "idle_12.png",
+    "idle_13.png",
+    "idle_14.png",
+    "idle_15.png",
+    "idle_16.png",
+    "idle_17.png",
+    "idle_18.png",
+    "idle_19.png",
+    "idle_20.png",
+    "idle_21.png",
+    "idle_22.png",
+    "idle_23.png",
+    "idle_24.png"
+   ],
+   "durations": [
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40,
+    40
+   ]
+  },
+  "sleep": {
+   "frames": [
+    "idle_0.png"
+   ],
+   "durations": [
+    1000
+   ]
+  }
+ }
+}
