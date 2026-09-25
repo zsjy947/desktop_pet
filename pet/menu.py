@@ -18,7 +18,7 @@ MENU_ITEM_H = 26
 MENU_SEP_H = 8
 MENU_PAD = 10
 
-_SPECIES_EMOJI = {'pokemon': '🐾', 'cat': '🐣'}
+_SPECIES_EMOJI = {'pokemon': '🐾'}
 _CHAR_KINDS = ('girl', 'hatch', 'anim')
 
 
@@ -43,17 +43,12 @@ def _species_emoji(preset):
 
 def spec(app):
     """菜单结构描述（后端无关）。物种决定交互项：
-        猫科    = 🍪喂食 / 🖐摸摸头
-        宝可梦  = 👋打招呼 / 🍓喂个树果 / ✨表演一个动作（无聊天）
+        宝可梦  = 👋打招呼 / 🍓喂个树果（无聊天）
         人类    = 👋打招呼 / 🎁送个礼物 / 💬聊聊天
     """
     b = app.behavior
     items = []
-    if app._is_cat():
-        items.append({'type': 'command', 'label': '🍪 喂食', 'cmd': app._feed})
-        items.append({'type': 'command', 'label': '🖐 摸摸头',
-                      'cmd': app._pet})
-    elif app._is_pokemon():
+    if app._is_pokemon():
         items.append({'type': 'command', 'label': '👋 打个招呼',
                       'cmd': app._greet})
         items.append({'type': 'command', 'label': '🍓 喂个树果',
@@ -75,8 +70,7 @@ def spec(app):
                   'cmd': app._toggle_sleep})
 
     # 角色子菜单：每次打开现扫注册表（新角色即时可见）
-    chars = [{'type': 'radio', 'label': '🐱 橘猫', 'value': 'cat'},
-             {'type': 'sep'}]
+    chars = []
     for preset in app.registry.values():
         if preset['kind'] not in _CHAR_KINDS:
             continue

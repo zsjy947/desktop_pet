@@ -76,7 +76,7 @@ def main(argv=None):
             print('桌宠未在运行')
         return 0
 
-    char_id = args.char or prefs.load_pref() or 'cat'
+    char_id = args.char or prefs.load_pref() or 'pikachu'
 
     if renderer == 'qt':
         if _qt_can_run(char_id):

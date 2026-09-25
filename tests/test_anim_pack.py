@@ -325,26 +325,6 @@ class QtRendererTest(unittest.TestCase):
                              f'facing={facing} 时蒙版未覆盖全部绘制像素'
                              f'（{inside}/{int(painted.sum())}）')
 
-    def test_cat_paint_and_region(self):
-        from PySide6.QtCore import QPoint
-        from PySide6.QtGui import QPainter, QImage
-        from pet import qt_render
-        r = qt_render.Renderer()
-        r.set_char({'id': 'cat', 'kind': 'cat'})
-        for state in ('idle', 'walk', 'sleep', 'happy', 'fall', 'drag'):
-            r.advance(state, None, -1, 0)
-            img = QImage(160, 160, QImage.Format_ARGB32_Premultiplied)
-            img.fill(0)
-            p = QPainter(img)
-            r.paint(p, state=state, t=0.3, facing=-1, particles=[],
-                    bubble_extra=0)
-            p.end()
-            reg = r.body_region()
-            self.assertFalse(reg.isEmpty(), f'{state} 蒙版不应为空')
-            # 中心区（身体）应命中；左上角（猫不画那里）应未命中
-            self.assertTrue(reg.contains(QPoint(80, 120)), state)
-            self.assertFalse(reg.contains(QPoint(5, 5)), state)
-
     def test_hatch_kind_paint(self):
         from PySide6.QtCore import QPoint
         from PySide6.QtGui import QPainter, QImage

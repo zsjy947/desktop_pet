@@ -5,9 +5,10 @@
 
 ## 1. 项目概览
 
-> **分支说明**：本分支 `pokemon` = 宝可梦线，角色只有橘猫 + 宝可梦
-> 图集×5；之前的人物（少女/竹兰照片精灵/芒果猫）在 `hatch-pet`
-> （人物线）分支。运行时代码两分支共享，角色内容不同。
+> **分支说明**：本分支 `pokemon` = 宝可梦线，角色只有宝可梦×5
+> （2026-09-25 起为 Pokémon Showdown 动画）；人物（少女/竹兰照片精灵/
+> 芒果猫）与 Canvas 橘猫在别的分支（橘猫已从本分支删除）。运行时代码
+> 两分支共享，角色内容不同。
 
 桌面宠物，**双渲染层**（2026-09-25 重构，动机见 §3.2 诊断）：
 - **Qt（主）**：PySide6 逐像素透明窗口（`WA_TranslucentBackground` +
@@ -20,7 +21,7 @@
   hatched 图集）。
 
 多显示器漫游、置顶（不被任务栏遮挡）、右键菜单弹出在宠物头顶（可微
-盖）两层通用。本分支角色 7 个：橘猫（Canvas 程序化）+ **宝可梦×5（皮卡丘/伊布/谢米陆上
+盖）两层通用。本分支角色 5 个：**宝可梦×5（皮卡丘/伊布/谢米陆上
 形态/比克提尼/新叶喵）**——2026-09-25 起全部换 **Pokémon Showdown
 官方动画**（25~33fps 透明 GIF 导入，见 §3.2），tricks 专属动作随图集
 退役（tk 层 hatched/ 包仍带 tricks 兜底）。资产两级：`anims/` **v2 帧
@@ -36,15 +37,15 @@ background, flat chroma key green screen），键控天然区分角色与背景�
 白底流程不要开）。atlas 用 `--snap 80 --erode 3`（erode 3 切绿边）。
 注意 atlas 单行重跑必须传全行清单，否则其余行会被清空。
 交互按物种分：人类角色 = 👋打招呼（waving 行）/ 🎁送礼物（excited
-状态→图集跳跃行 + 爱心）/ 💬聊聊天；猫科（橘猫/芒果，pet.json 加
-"species":"cat"）保留 🍪喂食 / 🖐摸摸头；**宝可梦（"species":"pokemon"）
+状态→图集跳跃行 + 爱心）/ 💬聊聊天；**宝可梦（"species":"pokemon"）
 = 👋打招呼 / 🍓喂个树果，没有聊聊天——只有叫声（phrases 全是拟声词），
-随机碎碎念关闭，**空闲时随机触发专属动作 trick**（behavior 的 trick
-状态播 pet.json tricks 指定的图集行 7/8，配叫声气泡 + 特效粒子
-spark/leaf/flower/fire/star，见 pet_window._tricks/_spawn_fx）。
-双击同理（人=打招呼，猫=摸头，宝可梦=打招呼）。气泡为矩形浅蓝半透
-明方框（边框 #5DADE2、底 #D6EAF8），无尾巴箭头，对话区压矮到两行贴
-住头顶。tk 层半透明走 pet/glass.xbm 87.5% 镂空；Qt 层是真 alpha。
+随机碎碎念关闭**；图集包空闲时随机触发专属动作 trick（behavior 的
+trick 状态播 pet.json tricks 指定的图集行 7/8，配叫声气泡 + 特效粒子
+spark/leaf/flower/fire/star，见 pet_window._tricks/_spawn_fx；Showdown
+动画包无 tricks，菜单自动隐藏表演项）。双击 = 打招呼。默认角色
+皮卡丘（偏好里的角色不存在时回落）。气泡为矩形浅蓝半透明方框（边框
+#5DADE2、底 #D6EAF8），无尾巴箭头，对话区压矮到两行贴住头顶。tk 层
+半透明走 pet/glass.xbm 87.5% 镂空；Qt 层是真 alpha。
 
 ## 3.1 宝可梦图集流程（2026-09-13）
 
@@ -110,16 +111,15 @@ sprigatito。与少女流程的差异：
    二值 alpha（软边/阴影/光效全被砍，绿幕/erode/空腔判罚整条链都在
    伺服它）。**结论：键色窗口是万恶之源。**
 
-### Qt 层的解法（pet/qt_app.py / qt_render.py / cat_qt.py）
+### Qt 层的解法（pet/qt_app.py / qt_render.py）
 
 - `qt_app.py`：组合根。Frameless + TranslucentBackground + Tool（不进
   任务栏）+ StaysOnTop；QTimer 30Hz；位移/下落按实际 dt 换算
   （config 的 per-frame 常量 ×FPS 换算成 px/s）；落地 squash 脉冲；
   QMenu 消费 menu.spec()（与 tk build 同一套分组，menu.py 重构）。
-- `qt_render.py`：Renderer 三后端（anim/hatch/cat）。advance() 播放头
+- `qt_render.py`：Renderer 双后端（anim/hatch）。advance() 播放头
   按逐帧时长累加；paint() 绘制帧 + 变换 + 粒子；body_region() 出命中
-  蒙版。橘猫是 sprites.py 的 QPainter 移植（cat_qt.py，适配器复用
-  make_mirror 与 sprites 的眼睛/睡姿助手）。
+  蒙版。Canvas 角色绘制已随橘猫删除（girl_sprites 仍为人物线保留）。
 - **蒙版（点击穿透）**：numpy 行程扫描帧 alpha → QRegion（横向 run +
   纵向同行程合并成条带矩形），app 层并上气泡多边形与粒子方块后
   setMask。**必须 translated(0, 对话区高)**（踩过：忘平移=宠物下半被
@@ -197,9 +197,8 @@ run.bat                    双击启动（pythonw，参数透传：run.bat --cha
 pet/
   __main__.py              命令行入口：python -m pet [--char|--list|--quit|--renderer]
   qt_app.py                Qt 组合根：逐像素透明置顶窗、dt 主循环、拖拽/菜单
-  qt_render.py             Qt 渲染器：三后端（anim/hatch/cat）+ 播放头 +
+  qt_render.py             Qt 渲染器：双后端（anim/hatch）+ 播放头 +
                            变换（呼吸/挤压/镜像）+ 软粒子 + 半透明气泡 + 蒙版
-  cat_qt.py                橘猫 QPainter 移植（适配 tk Canvas 图元签名）
   anims.py                 anims/ v2 资产加载器（anim.json schema 注释在此）
   app.py                   tk 组合根（兜底渲染层的窗口生命周期/交互/每帧协调）
   pet_window.py            兼容 shim（re-export PetApp 等，旧脚本不断链）
@@ -212,11 +211,10 @@ pet/
   renderers.py             tk 渲染分发 + 状态归一化（excited/trick 回落规则）
   startup.py               开机自启（用户启动文件夹写 VBS，目录可注入测试）
   fx.py                    粒子生成/推进（爱心/Zzz/特效；绘制分 tk/Qt 两层）
-  config.py                全局参数：键色、速度、橘猫配色与台词
-  characters.py            内置角色库：外观预设（Canvas 少女）+ 台词包
+  config.py                全局参数：键色、速度、粒子/气泡配色
+  characters.py            人物线共享的少女绘制参数（本分支 CHARACTERS 为空）
   custom.py                自定义角色注册表（custom_characters.json，不入库）
   drawutil.py              tk 绘制共享：镜像助手 / 气泡（圆角+尾巴）/ 粒子
-  sprites.py               橘猫 Canvas 逐帧绘制（tk 兜底层）
   girl_sprites.py          Q 版少女参数化绘制（图片帧缺失时的回落）
   photo_sprites.py         图片精灵播放器（assets/ 帧目录）
   hatch_sprites.py         hatch-pet 图集桌宠播放器（tk 层；Qt 层直接读同一图集）
@@ -341,6 +339,10 @@ custom_characters.json     接口生成的自定义角色（**不入库**）
 **精灵帧（tk 键色层）**
 - tkinter 的 PhotoImage **不能运行时翻转/旋转** → 所有镜像与姿势变换
   在构建期烘焙（每状态 [朝右×N, 朝左×N]）。
+- **PhotoImage 缓存必须挂在 canvas 组件上**（drawutil 字体缓存同款）：
+  模块级缓存跨 Tk 实例会复用**已销毁实例的死图**，`copy -from` 报
+  `TclError: image doesn't exist`，_tick 崩掉 after 链、动画冻结——
+  且异常只打 stderr 极易漏看（hatch_sprites._caches，2026-09-25 暴露）。
 - 帧必须铺满整个窗口画布（240×240），运行时 `create_image` 整帧贴。
 - 每张参考图只有一个姿势；走路=倾斜/剪切段、睡觉=压扁蹲姿是被逼的
   伪姿势。真·多姿势需要 Stable Diffusion + ControlNet(OpenPose) 或
@@ -445,12 +447,12 @@ custom_characters.json     接口生成的自定义角色（**不入库**）
   小光/露莎米奈图集 + 竹兰照片精灵 + 本地 ComfyUI 生图后端 + 交互/
   气泡/菜单重构，基于 main
 - `pokemon`：**宝可梦线**（本分支）——基于 hatch-pet，只保留 5 只
-  宝可梦图集（皮卡丘/伊布/谢米/比克提尼/新叶喵）+ 叫声交互 + 专属
-  随机动作；人物内容（hatched 人物包/照片精灵帧/characters.py 人物
-  预设）已移除，运行时代码与人物线共享。
-  2026-09-25 增：Qt 渲染层（qt_app/qt_render/cat_qt）+ anims/ v2 资产
+  宝可梦（皮卡丘/伊布/谢米/比克提尼/新叶喵）+ 叫声交互；人物内容
+  （hatched 人物包/照片精灵帧/characters.py 人物预设）与 Canvas 橘猫
+  （sprites.py/cat_qt.py）已删除，运行时代码与人物线共享。
+  2026-09-25 增：Qt 渲染层（qt_app/qt_render）+ anims/ v2 资产
   + convert_atlas/import_gif/import_showdown 工具 + tests/test_anim_pack.py
-  （43 项测试 = 28 tk 冒烟 + 15 资产/Qt）；5 只宝可梦全部换 Showdown
+  （42 项测试 = 27 tk 冒烟 + 15 资产/Qt）；5 只宝可梦全部换 Showdown
   动画（tricks 随图集退役，tk 层兜底不变）
 - `pixel-art` 已废弃删除（2026-09，本地与远程均已删；像素方案用户不满意）
 - 不入库：`reference/`、`custom_characters.json`、`tmp_*`、

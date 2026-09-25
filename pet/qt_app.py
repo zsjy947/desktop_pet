@@ -53,11 +53,13 @@ class PetAppQt(QWidget):
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.app = app
 
-        # 当前角色：偏好文件恢复，可被 --char 覆盖；anims 优先于图集
+        # 当前角色：偏好文件恢复，可被 --char 覆盖；anims 优先于图集。
+        # 偏好里的角色可能已不存在（如已移除的橘猫）：回落默认皮卡丘
         self.registry = registry_mod.full_registry(include_anims=True)
-        self.char_id = desired_char or prefs.load_pref() or 'cat'
+        self.char_id = desired_char or prefs.load_pref() or 'pikachu'
         if self.char_id not in self.registry:
-            self.char_id = 'cat'
+            self.char_id = ('pikachu' if 'pikachu' in self.registry
+                            else next(iter(self.registry), 'pikachu'))
         self.char = self.registry[self.char_id]
         self.setWindowTitle(f'桌面宠物 · {self.char["name"]}')
 
@@ -166,10 +168,6 @@ class PetAppQt(QWidget):
     def _is_pokemon(self):
         return self.char.get('species') == 'pokemon'
 
-    def _is_cat(self):
-        c = self.char
-        return c.get('kind') == 'cat' or c.get('species') == 'cat'
-
     def _p(self, key):
         return self.char['phrases'][key]
 
@@ -187,11 +185,7 @@ class PetAppQt(QWidget):
             self._open_menu()
 
     def mouseDoubleClickEvent(self, ev):
-        if ev.button() != Qt.LeftButton:
-            return
-        if self._is_cat():
-            self._pet()
-        else:
+        if ev.button() == Qt.LeftButton:
             self._greet()
 
     def mouseMoveEvent(self, ev):

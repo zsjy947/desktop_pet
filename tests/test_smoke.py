@@ -12,6 +12,7 @@ import unittest
 from unittest import mock
 
 from pet import characters
+from pet import registry as registry_mod
 from pet import pet_window
 from pet.pet_window import PetApp
 
@@ -79,15 +80,14 @@ class SmokeTest(unittest.TestCase):
         self.assertEqual(app.behavior.state, 'idle')
         self.assertAlmostEqual(app.y, app.ground_y, delta=1)
 
-    def test_double_click_pets_and_spawns_hearts(self):
+    def test_double_click_greets(self):
         cv, app = self.app.cv, self.app
-        # 两次快速按下触发 <Double-Button-1> 绑定
+        # 两次快速按下触发 <Double-Button-1> 绑定（双击=打招呼）
         for _ in range(2):
             cv.event_generate('<ButtonPress-1>', x=80, y=70,
                               rootx=app.x + 80, rooty=app.y + 70)
         self.pump(2)
         self.assertEqual(app.behavior.state, 'happy')
-        self.assertTrue(app.particles, '摸头后应产生爱心粒子')
         self.assertTrue(app.bubble_text)
 
         # happy 状态到期后应自动回落 idle，而不是永久卡住
@@ -163,24 +163,25 @@ class SmokeTest(unittest.TestCase):
         self.assertEqual(app.y, app.ground_y)
 
     def test_characters_library(self):
-        """角色库：橘猫 + 图集少女（人物线分支）；台词类别齐全。
-
-        分支无关：宝可梦分支 characters.py 只有橘猫（GIRLS 为空），
-        人物断言仅在有人物预设时要求全集。
-        """
-        self.assertEqual(characters.CAT['kind'], 'cat')
-        girls = [p for p in characters.CHARACTERS.values() if p['kind'] == 'girl']
+        """角色库：本分支角色全部来自 anims/（Showdown 动画）与 hatched/
+        图集，characters.CHARACTERS 为空（人物线分支才有少女预设）。"""
+        self.assertEqual(list(characters.CHARACTERS), [])   # 橘猫已移除
+        girls = [p for p in characters.CHARACTERS.values()
+                 if p['kind'] == 'girl']
         expected = {'nino', 'lillie', 'dawn', 'cynthia', 'lusamine'}
-        self.assertTrue({p['id'] for p in girls} <= expected)
         if girls:                        # 人物线分支：5 个少女应齐全
             self.assertEqual({p['id'] for p in girls}, expected)
-        for preset in characters.CHARACTERS.values():
+        # 宝可梦线：5 只宝可梦经 anims/hatched 注册，台词类别齐全
+        reg = registry_mod.full_registry(include_anims=True)
+        pids = {pid for pid, preset in reg.items()
+                if preset.get('species') == 'pokemon'}
+        self.assertTrue({'pikachu', 'eevee', 'shaymin', 'victini',
+                         'sprigatito'} <= pids)
+        for preset in reg.values():
             for key in ('talk', 'feed', 'pet', 'sleep', 'wake', 'drop',
                         'switch'):
                 self.assertTrue(preset['phrases'][key],
                                 f'{preset["name"]} 缺少台词类别 {key}')
-        # 未知 id 回落到橘猫
-        self.assertIs(characters.get('nope'), characters.CAT)
 
     def test_all_characters_render_all_states(self):
         """所有角色 × 所有状态都能画出来，不抛异常。"""
@@ -188,33 +189,26 @@ class SmokeTest(unittest.TestCase):
         cv = self.app.cv
         for preset in characters.CHARACTERS.values():
             for state in states:
-                if preset['kind'] == 'cat':
-                    from pet import sprites
-                    sprites.draw_frame(cv, state=state, t=0.4, facing=1,
-                                       bubble_text='测试气泡',
-                                       particles=[])
-                else:
-                    from pet import girl_sprites
-                    girl_sprites.draw_frame(cv, char=preset, state=state,
-                                            t=0.4, facing=-1,
-                                            bubble_text='测试气泡',
-                                            particles=[])
+                from pet import girl_sprites
+                girl_sprites.draw_frame(cv, char=preset, state=state,
+                                        t=0.4, facing=-1,
+                                        bubble_text='测试气泡',
+                                        particles=[])
             self.pump(1)
 
     def test_switch_character_changes_phrases_and_persists(self):
         app = self.app
+        old_id = app.char_id
         old_name = app.char['name']
-        # 分支无关：优先 nino（人物线），否则任一非橘猫角色（宝可梦线）
+        # 分支无关：优先 nino（人物线），否则任一其他角色（宝可梦线）
         other = ('nino' if 'nino' in app.registry
-                 else next(pid for pid, p in app.registry.items()
-                           if pid != 'cat'))
+                 else next(pid for pid in app.registry if pid != old_id))
         other_name = app.registry[other]['name']
         app._char_var.set(other)
         app._switch_character()
         self.assertEqual(app.char['id'], other)
         self.assertEqual(app.char['name'], other_name)
-        self.assertIsNot(app.char['phrases']['talk'],
-                         characters.CAT['phrases']['talk'])
+        self.assertNotEqual(app.char['id'], old_id)
         self.pump(2)
         self.assertTrue(app.bubble_text)
         self.assertIn(app.bubble_text, app.char['phrases']['switch'])
@@ -224,10 +218,10 @@ class SmokeTest(unittest.TestCase):
         self.assertEqual(app.registry[pet_window.load_pref()]['name'],
                          other_name)
 
-        # 切回橘猫
-        app._char_var.set('cat')
+        # 切回原角色
+        app._char_var.set(old_id)
         app._switch_character()
-        self.assertEqual(app.char['id'], 'cat')
+        self.assertEqual(app.char['id'], old_id)
         self.assertIsNotNone(old_name)
 
     def test_menu_origin_above_pet(self):
@@ -300,10 +294,9 @@ class SmokeTest(unittest.TestCase):
                 bubble_text='测试', particles=[])
         self.pump(2)
 
-        app._char_var.set('cat')
+        app._char_var.set(app.char_id)   # 无可切回的默认角色，原地恢复
         app._switch_character()
         self.pump(3)
-        self.assertEqual(app.size, 160)
 
     def test_add_character_interface(self):
         """角色添加接口：合成透明底图 → 精灵帧 + 台词注册 → 进入角色表。"""
@@ -424,10 +417,7 @@ class SmokeTest(unittest.TestCase):
         patcher = mock.patch.object(hatch_sprites, 'HATCH_DIR', tmp.name)
         patcher.start()
         self.addCleanup(patcher.stop)
-        for cache in (hatch_sprites._metad, hatch_sprites._atlas_cache,
-                      hatch_sprites._cell_cache):
-            cache.clear()
-            self.addCleanup(cache.clear)
+        hatch_sprites._metad.clear()   # 帧缓存已挂 canvas 组件，无需清理
 
         # 合成图集：第 0/1/2/7 行有内容，其余行保持全透明
         atlas = Image.new('RGBA', (hatch_sprites.ATLAS_W, hatch_sprites.ATLAS_H),
@@ -457,6 +447,7 @@ class SmokeTest(unittest.TestCase):
         # 进入角色表并切换渲染所有状态（缺行回落 idle）
         app = self.app
         app.registry = app._registry()   # 等价于重开一次右键菜单的刷新
+        prev_id, prev_size = app.char_id, app.size
         self.assertIn('zzhatch', app.registry)
         app._char_var.set('zzhatch')
         app._switch_character()
@@ -476,10 +467,10 @@ class SmokeTest(unittest.TestCase):
                                  t=0.2, facing=1, bubble_text='',
                                  particles=[], trick_row=None)
         self.pump(1)
-        app._char_var.set('cat')
+        app._char_var.set(prev_id)
         app._switch_character()
         self.pump(2)
-        self.assertEqual(app.size, 160)
+        self.assertEqual(app.size, prev_size)
 
     def test_hatch_pipeline_slots_and_atlas(self):
         """hatch-pet 管线：条带切槽抠底 → 行内合成 → 图集契约校验。"""
@@ -525,10 +516,10 @@ class SmokeTest(unittest.TestCase):
         self.assertEqual(app.behavior.state, 'happy')
 
     def test_switch_away_from_trick_does_not_crash(self):
-        """宝可梦 trick 中切到照片/Canvas 角色：主循环不得崩（trick 行
+        """宝可梦 trick 中切到照片/其他角色：主循环不得崩（trick 行
         只有图集有，_draw_state 需回落 idle，否则 photo_sprites
         KeyError）。分支无关：有人物线时用竹兰照片精灵（最能复现），
-        宝可梦线回落橘猫 Canvas。"""
+        宝可梦线切到另一只宝可梦。"""
         from pet import photo_sprites
 
         app = self.app
@@ -537,7 +528,11 @@ class SmokeTest(unittest.TestCase):
                          if p.get('tricks')), None)
         if trick_id is None:
             self.skipTest('本分支没有带专属动作的图集角色')
-        target = 'cynthia' if 'cynthia' in app.registry else 'cat'
+        target = ('cynthia' if 'cynthia' in app.registry
+                  else next((pid for pid, p in app.registry.items()
+                             if pid != trick_id), None))
+        if target is None:
+            self.skipTest('没有可切换的目标角色')
         app._char_var.set(trick_id)
         app._switch_character()
         app.behavior._trick()
@@ -549,9 +544,6 @@ class SmokeTest(unittest.TestCase):
         if target == 'cynthia':
             self.assertEqual(app.size,
                              photo_sprites.window_size('cynthia'))
-        app._char_var.set('cat')
-        app._switch_character()
-        self.pump(1)
 
     def test_startup_autostart_cycle(self):
         """开机自启：enable/disable/is_enabled 往返 + VBS 内容标记。"""
@@ -595,7 +587,8 @@ class SmokeTest(unittest.TestCase):
         self.assertFalse(prefs.quit_pending())
 
     def test_menu_structure_by_species(self):
-        """右键菜单按物种分组：宝可梦有表演动作无聊天，猫科有喂食。"""
+        """右键菜单按物种分组：宝可梦有喂树果无聊天（tricks 存在时才
+        有表演动作）。"""
         from pet import menu as pet_menu
 
         def labels_of(m):
@@ -614,22 +607,14 @@ class SmokeTest(unittest.TestCase):
         app._switch_character()
         m = pet_menu.build(app)
         labels = labels_of(m)
-        self.assertIn('表演一个动作', labels)
         self.assertIn('喂个树果', labels)
         self.assertNotIn('聊聊天', labels)
+        self.assertNotIn('喂食', labels)          # 猫科分组已随橘猫移除
+        if app.behavior.tricks:                   # tk 层 hatched 有 tricks
+            self.assertIn('表演一个动作', labels)
         self.assertIn('切换角色', labels)
         self.assertIn('开机自启', labels)
         self.assertIn('退出', labels)
-        m.destroy()
-
-        app._char_var.set('cat')
-        app._switch_character()
-        m = pet_menu.build(app)
-        labels = labels_of(m)
-        self.assertIn('喂食', labels)
-        self.assertIn('摸摸头', labels)
-        self.assertIn('聊聊天', labels)
-        self.assertNotIn('表演一个动作', labels)
         m.destroy()
 
     def test_perform_trick_menu_action(self):
@@ -637,24 +622,23 @@ class SmokeTest(unittest.TestCase):
         app = self.app
         app.registry = app._registry()
         pk = next((p for p, preset in app.registry.items()
-                   if preset.get('species') == 'pokemon'), None)
+                   if preset.get('tricks')), None)
         if pk is None:
-            self.skipTest('本分支没有宝可梦角色')
+            self.skipTest('本分支没有带专属动作的角色')
         app._char_var.set(pk)
         app._switch_character()
         self.pump(2)
         app.behavior.wake()      # 深夜自动打盹时先叫醒
         app._perform_trick()
         self.assertEqual(app.behavior.state, 'trick')
-        app._char_var.set('cat')
-        app._switch_character()
 
     def test_desired_char_boot_override(self):
         """--char 指定角色：PetApp(desired_char=) 启动即切换。"""
-        app = self.app          # 借 setUp 的注册表挑一个非橘猫角色
-        other = next((pid for pid in app.registry if pid != 'cat'), None)
+        app = self.app          # 借 setUp 的注册表挑一个非当前角色
+        other = next((pid for pid in app.registry if pid != app.char_id),
+                     None)
         if other is None:
-            self.skipTest('本分支只有橘猫')
+            self.skipTest('注册表只有一个角色')
         app2 = PetApp(desired_char=other)
         self.addCleanup(app2.root.destroy)
         self.assertEqual(app2.char['id'], other)
@@ -665,7 +649,10 @@ class SmokeTest(unittest.TestCase):
         app = self.app
         app.registry = app._registry()
         cv = app.cv
-        cases = [(app.registry['cat'],
+        first = next(iter(app.registry), None)
+        if first is None:
+            self.skipTest('注册表为空')
+        cases = [(app.registry[first],
                   ('excited', 'trick', 'idle'))]
         for preset in app.registry.values():
             if preset.get('kind') == 'hatch':

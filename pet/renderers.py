@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
-"""渲染器分发：按角色类型选择绘制后端，统一状态归一化。
+"""渲染器分发（tk 层）：按角色类型选择绘制后端，统一状态归一化。
 
-四套绘制后端的差异在这里抹平（app 只管传当前状态）：
-    sprites        Canvas 程序化橘猫（无 char，自身签名不带 char）
+三套绘制后端的差异在这里抹平（app 只管传当前状态）：
     girl_sprites   Canvas 参数化少女
     photo_sprites  照片帧精灵（assets/）
     hatch_sprites  图集桌宠（hatched/，唯一支持 excited 跳跃行与
@@ -17,7 +16,6 @@
 from . import girl_sprites
 from . import hatch_sprites
 from . import photo_sprites
-from . import sprites
 
 
 def _normalize(state, char):
@@ -41,11 +39,7 @@ def draw(cv, *, char, state, t, facing, particles, trick_row=None):
     kind = char.get('kind')
     use_photo = (kind == 'girl' and bool(char.get('photo'))
                  and photo_sprites.has_assets(char['photo']))
-    if kind == 'cat':
-        sprites.draw_frame(cv, state=_normalize(state, char), t=t,
-                           facing=facing, bubble_text='',
-                           particles=particles)
-    elif use_photo:
+    if use_photo:
         photo_sprites.draw_frame(cv, char=char,
                                  state=_normalize(state, char),
                                  t=t, facing=facing, bubble_text='',

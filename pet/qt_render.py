@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Qt 渲染层：逐像素 alpha 播放器（v2 anims 资产 / hatched 图集 / Canvas 橘猫）。
+"""Qt 渲染层：逐像素 alpha 播放器（v2 anims 资产 / hatched 图集）。
 
 与 tk 键色窗口的区别（也是动效根治点）：
     * alpha 不必二值——软边/抗锯齿直接呈现，erode 去边整条链退役；
@@ -26,7 +26,6 @@ from PySide6.QtGui import (QColor, QFont, QFontMetrics,
 import numpy as np
 
 from . import anims
-from . import cat_qt
 from . import config as C
 from . import hatch_sprites
 
@@ -314,7 +313,7 @@ class Renderer:
     # ---- 角色 ----
     @staticmethod
     def supported(char):
-        return char.get('kind') in ('anim', 'hatch', 'cat')
+        return char.get('kind') in ('anim', 'hatch')
 
     def set_char(self, char):
         if self.char is not None and char.get('id') == self.char.get('id') \
@@ -328,17 +327,13 @@ class Renderer:
     def window_size(self):
         if self.kind == 'anim':
             return anims.window_size(anims.meta(self.char['photo']))
-        if self.kind == 'hatch':
-            return hatch_sprites.window_size(self.char['photo'])
-        return C.WINDOW_SIZE
+        return hatch_sprites.window_size(self.char['photo'])
 
     def foot_y(self):
         """脚底线在宠物画布中的 y。"""
         if self.kind == 'anim':
             return anims.foot_y(anims.meta(self.char['photo']))
-        if self.kind == 'hatch':
-            return hatch_sprites.window_size(self.char['photo']) - 6
-        return C.PET_FOOT_Y
+        return hatch_sprites.window_size(self.char['photo']) - 6
 
     def pulse(self):
         """落地/着陆时调用：触发一次 squash 挤压脉冲。"""
@@ -440,9 +435,6 @@ class Renderer:
                     head[1] += durs[head[0]]
             self._view = {'key': key, 'idx': head[0], 'flip': False,
                           'row': row}
-        else:                                   # cat：程序化绘制，无播放头
-            self._view = {'key': 'cat', 'idx': 0, 'flip': False,
-                          'cat_state': state, 'cat_facing': facing}
 
     # ---- 帧图元 ----
     def _anim_image(self, key, idx, flip):
@@ -484,20 +476,10 @@ class Renderer:
     # ---- 绘制 ----
     def paint(self, p, *, state, t, facing, particles, bubble_extra):
         """在窗口 painter 上画当前帧（宠物区 + 粒子）；气泡由 app 层画。"""
-        size = self.window_size()
-        foot_abs = bubble_extra + self.foot_y()
         p.setRenderHint(QPainter.Antialiasing, True)
         p.setRenderHint(QPainter.SmoothPixmapTransform, True)
 
-        if self.kind == 'cat':
-            p.save()
-            p.translate(0, bubble_extra)
-            k = size / 160
-            p.scale(k, k)
-            cat_qt.draw_frame(cat_qt.QtCanvas(p), state=state, t=t,
-                              facing=facing)
-            p.restore()
-        elif self._view is not None:
+        if self._view is not None:
             img = self._frame_image()
             dy = 0.0
             sx = sy = 1.0
@@ -537,9 +519,7 @@ class Renderer:
 
     # ---- 命中区域（宠物区坐标，y 从 0 到 window）----
     def body_region(self):
-        if self.kind == 'cat':
-            return self._cat_region()
-        if self._view is None or self._view.get('key') == 'cat':
+        if self._view is None:
             return None
         ck = (self.char['photo'], self._view['key'], self._view['idx'],
               self._view['flip'])
@@ -554,29 +534,4 @@ class Renderer:
             # squash 横向放大 ~10%：蒙版两侧扩 6px 防止挤压期间被裁边
             reg = reg.united(reg.translated(6, 0)).united(
                 reg.translated(-6, 0))
-        return reg
-
-    def _cat_region(self):
-        """橘猫蒙版：程序化轮廓随时间摆动（尾巴/腿），用 2 秒内 24 个
-        相位的渲染结果取并集（按 state+facing 缓存）。"""
-        v = self._view or {}
-        size = self.window_size()
-        ck = ('cat', v.get('cat_state'), v.get('cat_facing'), size)
-        reg = self._reg.get(ck)
-        if reg is not None:
-            return reg
-        reg = QRegion()
-        for i in range(24):
-            t = i * (2.0 / 24)
-            img = QImage(size, size, QImage.Format_ARGB32_Premultiplied)
-            img.fill(Qt.transparent)
-            p = QPainter(img)
-            p.setRenderHint(QPainter.Antialiasing, True)
-            k = size / 160
-            p.scale(k, k)
-            cat_qt.draw_frame(cat_qt.QtCanvas(p), state=v.get('cat_state'),
-                              t=t, facing=v.get('cat_facing'))
-            p.end()
-            reg = reg.united(region_from_image(img))
-        self._reg[ck] = reg
         return reg

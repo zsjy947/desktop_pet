@@ -53,8 +53,48 @@ ROW_SPECS = [
 FRAME_COUNT = {row: n for _name, row, n, _d in ROW_SPECS}
 
 _metad = {}          # pid -> pet.json 内容
-_atlas_cache = {}    # pid -> (mtime, PhotoImage)
-_cell_cache = {}     # (pid, row, col) -> PhotoImage
+# PhotoImage 属于创建它的 Tk 解释器：帧缓存必须挂在 canvas 组件上——
+# 模块级缓存跨 Tk 实例（多实例/测试每用例新建 tk.Tk()）复用死图会
+# TclError: image doesn't exist，_tick 崩掉 after 链（2026-09-25 暴露）
+
+
+def _caches(cv):
+    """canvas 级帧缓存：(atlas_cache, cell_cache)，随组件销毁回收。"""
+    caches = getattr(cv, '_hatch_caches', None)
+    if caches is None:
+        caches = ({}, {})
+        cv._hatch_caches = caches
+    return caches
+
+
+def _atlas(cv, pid):
+    atlas_cache, cell_cache = _caches(cv)
+    path = _sprite_path(pid)
+    mtime = os.path.getmtime(path)
+    hit = atlas_cache.get(pid)
+    if hit and hit[0] == mtime:
+        return hit[1]
+    ph = tk.PhotoImage(file=path, master=cv)
+    atlas_cache[pid] = (mtime, ph)
+    for k in [k for k in cell_cache if k[0] == pid]:
+        del cell_cache[k]
+    return ph
+
+
+def _cell(cv, pid, row, col):
+    cell_cache = _caches(cv)[1]
+    key = (pid, row, col)
+    ph = cell_cache.get(key)
+    if ph is not None:
+        return ph
+    atlas = _atlas(cv, pid)
+    ph = tk.PhotoImage(master=cv, width=CELL_W, height=CELL_H)
+    x1, y1 = col * CELL_W, row * CELL_H
+    # Python 3.12 的 PhotoImage.copy() 不带参数，直接走 tk 命令拷区域
+    ph.tk.call(ph.name, 'copy', atlas.name, '-from',
+               x1, y1, x1 + CELL_W, y1 + CELL_H)
+    cell_cache[key] = ph
+    return ph
 
 
 def _meta(pid):
@@ -180,34 +220,6 @@ def _phase(row, t):
         if phase < acc:
             return i
     return 0
-
-
-def _atlas(cv, pid):
-    path = _sprite_path(pid)
-    mtime = os.path.getmtime(path)
-    hit = _atlas_cache.get(pid)
-    if hit and hit[0] == mtime:
-        return hit[1]
-    ph = tk.PhotoImage(file=path, master=cv)
-    _atlas_cache[pid] = (mtime, ph)
-    for key in [k for k in _cell_cache if k[0] == pid]:
-        del _cell_cache[key]
-    return ph
-
-
-def _cell(cv, pid, row, col):
-    key = (pid, row, col)
-    ph = _cell_cache.get(key)
-    if ph is not None:
-        return ph
-    atlas = _atlas(cv, pid)
-    ph = tk.PhotoImage(master=cv, width=CELL_W, height=CELL_H)
-    x1, y1 = col * CELL_W, row * CELL_H
-    # Python 3.12 的 PhotoImage.copy() 不带参数，直接走 tk 命令拷区域
-    ph.tk.call(ph.name, 'copy', atlas.name, '-from',
-               x1, y1, x1 + CELL_W, y1 + CELL_H)
-    _cell_cache[key] = ph
-    return ph
 
 
 def draw_frame(cv, *, char, state, t, facing, bubble_text, particles,

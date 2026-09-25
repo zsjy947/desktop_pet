@@ -37,11 +37,13 @@ class PetApp:
     def __init__(self, desired_char=None):
         self.root = tk.Tk()
 
-        # 当前角色：偏好文件恢复，可被 --char 覆盖；图集角色窗口更大
+        # 当前角色：偏好文件恢复，可被 --char 覆盖；图集角色窗口更大。
+        # 偏好里的角色可能已不存在（如已移除的橘猫）：回落默认皮卡丘
         self.registry = registry_mod.full_registry()
-        self.char_id = desired_char or prefs.load_pref() or 'cat'
+        self.char_id = desired_char or prefs.load_pref() or 'pikachu'
         if self.char_id not in self.registry:
-            self.char_id = 'cat'
+            self.char_id = ('pikachu' if 'pikachu' in self.registry
+                            else next(iter(self.registry), 'pikachu'))
         self.char = self.registry[self.char_id]
         self._char_var = tk.StringVar(value=self.char_id)
         self.root.title(f'桌面宠物 · {self.char["name"]}')
@@ -183,11 +185,6 @@ class PetApp:
         """宝可梦：只有叫声（无对话/随机碎碎念），菜单不带聊聊天。"""
         return self.char.get('species') == 'pokemon'
 
-    def _is_cat(self):
-        """猫科（橘猫 / 芒果等）用喂食摸头，其余用打招呼/送礼物。"""
-        c = self.char
-        return c.get('kind') == 'cat' or c.get('species') == 'cat'
-
     # ---------------- 台词 ----------------
     def _p(self, key):
         """当前角色的某类台词列表。"""
@@ -221,10 +218,7 @@ class PetApp:
             self.vy = 0.0
 
     def _on_double_click(self, event):
-        if self._is_cat():
-            self._pet()
-        else:
-            self._greet()
+        self._greet()
 
     def _on_menu(self, event):
         """右键菜单：弹在宠物上方（底边贴住头顶），不遮挡宠物。"""
