@@ -63,13 +63,39 @@ def _load_pack_meta(pid):
         return None
 
 
-_metad = {}      # pid -> anim.json 内容
+_metad = {}      # pid -> (stamp, anim.json 内容)
+
+
+def pack_stamp(pid):
+    """资产包指纹：anim.json 与 frames/ 下**逐帧文件**的最新 mtime
+    （覆盖同名帧文件不改目录 mtime，必须逐文件取）。运行时据此热重载
+    （换资产不用重启）；调用方自行降频（约 3s 一次）。"""
+    stamps = []
+    try:
+        stamps.append(os.path.getmtime(os.path.join(ANIMS_DIR, pid,
+                                                    'anim.json')))
+    except OSError:
+        pass
+    fdir = frames_dir(pid)
+    try:
+        for name in os.listdir(fdir):
+            try:
+                stamps.append(os.path.getmtime(os.path.join(fdir, name)))
+            except OSError:
+                pass
+    except OSError:
+        pass
+    return max(stamps) if stamps else None
 
 
 def meta(pid):
-    if pid not in _metad:
-        _metad[pid] = _load_pack_meta(pid) or {}
-    return _metad[pid]
+    stamp = pack_stamp(pid)
+    hit = _metad.get(pid)
+    if hit and hit[0] == stamp:
+        return hit[1]
+    data = _load_pack_meta(pid) or {}
+    _metad[pid] = (stamp, data)
+    return data
 
 
 def has_assets(pid):

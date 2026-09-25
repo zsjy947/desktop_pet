@@ -15,6 +15,7 @@ QBitmap 阈值），app 层再并上气泡/粒子矩形后 setMask——透明�
 与键色窗口的穿透体验一致。
 """
 import math
+import os
 import time
 
 from PySide6.QtCore import QPointF, QRectF, Qt
@@ -307,6 +308,8 @@ class Renderer:
         self._head = {}         # 播放头：key -> [idx, remaining_ms]
         self._view = None       # advance() 后的当前绘制信息
         self._pulse_t0 = None   # 落地挤压脉冲
+        self._stamps = {}       # pid -> 资产包 mtime（热重载检测）
+        self._reload_tick = 0   # 热重载检查降频计数
 
     # ---- 角色 ----
     @staticmethod
@@ -376,7 +379,32 @@ class Renderer:
         return None
 
     # ---- 每帧推进（时长累加器，帧边界与 tick 对齐）----
+    def _check_reload(self):
+        """资产包热重载：anim.json / 逐帧文件 / 图集 mtime 变了就清缓存，
+        旧实例换资产不用重启。逐文件 stat 有开销，每 ~3s 检查一次。"""
+        self._reload_tick += 1
+        if self._reload_tick % 90 or self.kind not in ('anim', 'hatch'):
+            return
+        pid = self.char.get('photo')
+        if self.kind == 'anim':
+            stamp = anims.pack_stamp(pid)
+        else:
+            try:
+                stamp = os.path.getmtime(hatch_sprites._sprite_path(pid))
+            except OSError:
+                stamp = None
+        if stamp == self._stamps.get(pid):
+            return
+        self._stamps[pid] = stamp
+        for cache in (self._img, self._reg):
+            for k in [k for k in cache if k[0] == pid]:
+                del cache[k]
+        self._atlas_img.pop(pid, None)
+        self._head = {}
+        self._view = None
+
     def advance(self, state, trick_state, facing, dt_ms):
+        self._check_reload()
         if self.kind == 'anim':
             key = self._anim_key(state, trick_state)
             if key is None:

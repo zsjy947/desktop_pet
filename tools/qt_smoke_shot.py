@@ -24,16 +24,27 @@ def main():
                             cwd='.')
     time.sleep(wait)
 
-    title = None
-    for c in ('皮卡丘·动画', '皮卡丘', '橘猫'):
-        hwnd = ctypes.windll.user32.FindWindowW(None, f'桌面宠物 · {c}')
-        if hwnd:
-            title = c
-            break
+    # 按标题前缀枚举窗口（不硬编码角色名）
+    hwnd = None
+    found = []
+    user32 = ctypes.windll.user32
+    buf = ctypes.create_unicode_buffer(128)
+
+    @ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM)
+    def _cb(h, _l):
+        nonlocal hwnd
+        user32.GetWindowTextW(h, buf, 128)
+        if buf.value.startswith('桌面宠物 · '):
+            found.append(buf.value)
+            if hwnd is None:
+                hwnd = h
+        return True
+    user32.EnumWindows(_cb, 0)
     if not hwnd:
-        print('找不到宠物窗口')
+        print('找不到宠物窗口（ EnumWindows 结果：', found or '无', '）')
         proc.terminate()
         return 1
+    title = found[0]
 
     rect = wt.RECT()
     ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))

@@ -144,7 +144,9 @@ sprigatito。与少女流程的差异：
 pet/anims.py 模块注释（id/species/window/foot/phrases/tricks(state 键)/
 states{idle,walk(flip_left),sleep,happy,jump,trick0…}，durations 逐帧
 ms 或 fps）。状态回落与图集一致（excited→happy、fall/drag→jump、
-缺行→idle，sleep 无行→定格 idle 第 0 帧）。
+缺行→idle，sleep 无行→定格 idle 第 0 帧）。**热重载**：运行时每 ~3s
+取 anim.json + 逐帧文件 mtime 指纹（覆盖同名帧不改目录 mtime，必须逐
+文件取），变了自动清帧/蒙版缓存——旧实例换资产不用重启。
 
 - `python tools/convert_atlas.py [id...]`：hatched/ 图集一键转 v2
   （行 1→walk+flip_left、行 2 丢弃、sleep_row→sleep、tricks.row→
@@ -160,7 +162,9 @@ ms 或 fps）。状态回落与图集一致（excited→happy、fall/drag→jump
   localgen/showdown/。tricks 随图集退役（GIF 无对应动画帧），菜单在
   behavior.tricks 为空时自动隐藏"✨ 表演一个动作"。
 - `python tools/qt_smoke_shot.py <id> <out.png>`：后台起宠物按窗口
-  标题找 HWND 截图（驱动进程自己 SetProcessDpiAwareness(2)）。
+  标题前缀「桌面宠物 · 」枚举 HWND 截图（驱动进程自己
+  SetProcessDpiAwareness(2)；别用 FindWindow 硬编码角色名，换角色就
+  匹配不到——踩过）。
 - **双重镜像踩坑（2026-09-25）**：走路朝左时精灵被裁得只剩碎片——
   `_anim_image` 在 flip 时已返回镜像帧图（蒙版按它构建），paint 又叠
   一次 QTransform 镜像 → 显示与蒙版左右错位，不对称帧 38% 像素落在
