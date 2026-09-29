@@ -15,6 +15,7 @@ import math
 import os
 import random
 import time
+import traceback
 import tkinter as tk
 from tkinter import font as tkfont
 
@@ -32,10 +33,28 @@ from .behavior import Behavior
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+_ERR_LOG = os.path.join(ROOT, 'err.log')
+_ERR_LOG_MAX = 1 << 20       # 约 1MB：超过先清空再写，防日志无限膨胀
+
+
+def _log_err(note, exc, tb=None):
+    """把时间戳 + traceback 追加写入项目根 err.log（记录失败本身不再抛）。"""
+    try:
+        if os.path.exists(_ERR_LOG) and os.path.getsize(_ERR_LOG) > _ERR_LOG_MAX:
+            open(_ERR_LOG, 'w').close()            # 超限：截断重写
+        with open(_ERR_LOG, 'a', encoding='utf-8') as f:
+            f.write(f'\n[{time.strftime("%Y-%m-%d %H:%M:%S")}] {note}\n')
+            traceback.print_exception(type(exc), exc, tb or exc.__traceback__,
+                                      file=f)
+    except OSError:
+        pass
+
 
 class PetApp:
     def __init__(self, desired_char=None):
         self.root = tk.Tk()
+        # Tk 回调异常兜底：默认只打印到 stderr，这里改记 err.log（不退出）
+        self.root.report_callback_exception = self._report_tk_exception
 
         # 当前角色：偏好文件恢复，可被 --char 覆盖；图集角色窗口更大。
         # 偏好里的角色可能已不存在（如已移除的橘猫）：回落默认皮卡丘
@@ -375,7 +394,20 @@ class PetApp:
         self.particles.extend(fx.zzz(self.size / 160))
 
     # ---------------- 主循环 ----------------
+    def _report_tk_exception(self, exc, val, tb):
+        """Tk 事件回调异常：记 err.log，不让异常打死应用。"""
+        _log_err('tkinter 回调异常', val, tb)
+
     def _tick(self):
+        """主循环兜底：任何异常记入 err.log，且 after 链绝不断掉。"""
+        try:
+            self._tick_body()
+        except Exception as exc:                  # noqa: BLE001
+            _log_err('tk 主循环 _tick 异常', exc)
+        finally:
+            self._schedule_tick()
+
+    def _tick_body(self):
         now = time.monotonic()
         t = now - self._t0
         b = self.behavior
@@ -456,5 +488,3 @@ class PetApp:
         renderers.draw(self.cv, char=self.char, state=b.state, t=t,
                        facing=b.facing, particles=self.particles,
                        trick_row=(trick['row'] if trick else None))
-
-        self._schedule_tick()

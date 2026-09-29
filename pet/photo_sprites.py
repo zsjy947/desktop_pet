@@ -26,7 +26,20 @@ STATE_FPS = {'idle': 1.6, 'walk': 8.0, 'sleep': 0.0, 'drag': 0.0,
              'fall': 0.0, 'happy': 6.0}
 
 _manifests = {}     # id -> manifest dict
-_frames = {}        # (id, filename) -> tk.PhotoImage
+# PhotoImage 属于创建它的 Tk 解释器：帧缓存必须挂在 canvas 组件上——
+# 模块级缓存跨 Tk 实例（多实例/测试每用例新建 tk.Tk()）复用死图会
+# TclError: image doesn't exist，_tick 崩掉 after 链（同 hatch_sprites 的
+# 已修同型 bug）
+
+
+def _frames(cv):
+    """canvas 级帧缓存 {(char_id, filename) -> tk.PhotoImage}，
+    随组件销毁回收。"""
+    cache = getattr(cv, '_photo_frames', None)
+    if cache is None:
+        cache = {}
+        cv._photo_frames = cache
+    return cache
 
 
 def _manifest(char_id):
@@ -51,12 +64,13 @@ def _frame(cv, char_id, state, index):
     m = _manifest(char_id)
     names = m['frames'][state]
     name = names[index % len(names)]
+    cache = _frames(cv)
     key = (char_id, name)
-    ph = _frames.get(key)
+    ph = cache.get(key)
     if ph is None:
         path = os.path.join(ASSET_DIR, char_id, name)
         ph = tk.PhotoImage(file=path, master=cv)
-        _frames[key] = ph
+        cache[key] = ph
     return ph
 
 

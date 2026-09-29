@@ -53,18 +53,32 @@ def import_one(pid):
         with open(pet_json, encoding='utf-8') as f:
             old = json.load(f)
 
-    # 清掉旧包（转换包的 r0c0.png 等帧不能残留）
+    # 先取到替换品再删旧包：下载 GIF + 转帧都写进临时 staging 目录，
+    # 全部成功后才替换 anims/<pid>/——中途失败旧包原样保留；旧包里的
+    # r0c0.png 等残留帧随替换一并清掉（import_gif 直接写目标目录，
+    # 不经 staging 就得先删旧包才能去残留，失败即丢角色）
+    gif = download(pid)
     pack_dir = os.path.join(anims.ANIMS_DIR, pid)
+    stage = os.path.join(anims.ANIMS_DIR, f'.{pid}.staging')
+    if os.path.isdir(stage):
+        shutil.rmtree(stage)
+    try:
+        meta = import_gif(gif, pid,
+                          name=old.get('displayName') or pid,
+                          species=old.get('species') or 'pokemon',
+                          description=old.get('description') or '',
+                          dest=stage)
+        meta['phrases'] = old.get('phrases') or {}
+        with open(os.path.join(stage, pid, 'anim.json'), 'w',
+                  encoding='utf-8') as f:
+            json.dump(meta, f, ensure_ascii=False, indent=1)
+    except BaseException:
+        shutil.rmtree(stage, ignore_errors=True)   # 替换品没拿到：清 staging
+        raise
     if os.path.isdir(pack_dir):
-        shutil.rmtree(pack_dir)
-
-    meta = import_gif(download(pid), pid,
-                      name=old.get('displayName') or pid,
-                      species=old.get('species') or 'pokemon',
-                      description=old.get('description') or '')
-    meta['phrases'] = old.get('phrases') or {}
-    with open(os.path.join(pack_dir, 'anim.json'), 'w', encoding='utf-8') as f:
-        json.dump(meta, f, ensure_ascii=False, indent=1)
+        shutil.rmtree(pack_dir)                    # 替换品已就绪，才动旧包
+    os.replace(os.path.join(stage, pid), pack_dir)
+    shutil.rmtree(stage, ignore_errors=True)
     return meta
 
 

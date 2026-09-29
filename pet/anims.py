@@ -31,6 +31,8 @@ anim.json schema：
 """
 import json
 import os
+import sys
+import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ANIMS_DIR = os.path.join(ROOT, 'anims')
@@ -58,12 +60,34 @@ def _load_pack_meta(pid):
         return None
     try:
         with open(path, encoding='utf-8') as f:
-            return json.load(f)
+            meta = json.load(f)
     except Exception:
         return None
+    _warn_bad_states(pid, meta)
+    return meta
+
+
+def _warn_bad_states(pid, meta):
+    """非法状态行告警（stderr）：frames/durations 均为空、或 fps 非
+    数字的状态运行时会被渲染层跳过/按缺省播，打一行方便排查资产问题。"""
+    for key, entry in (meta.get('states') or {}).items():
+        if not isinstance(entry, dict):
+            continue
+        frames = entry.get('frames')
+        durs = entry.get('durations')
+        if frames == [] and durs == []:
+            print(f'[anims] 警告：{pid} 状态 {key} 的 frames/durations '
+                  f'均为空列表，该状态无法播放', file=sys.stderr)
+        elif (entry.get('frames') and durs is None
+                and not isinstance(entry.get('fps'), (int, float))):
+            print(f'[anims] 警告：{pid} 状态 {key} 的 fps 非数字且缺 '
+                  f'durations，将按缺省 {int(DEFAULT_FPS)}fps 播放',
+                  file=sys.stderr)
 
 
 _metad = {}      # pid -> (stamp, anim.json 内容)
+_stamp_cache = {}    # pid -> (monotonic 到期时间, stamp)：3 秒时间窗缓存
+_STAMP_WINDOW = 3.0   # 秒：窗口内复用上次 stamp，不再逐文件 stat
 
 
 def pack_stamp(pid):
@@ -89,10 +113,19 @@ def pack_stamp(pid):
 
 
 def meta(pid):
-    stamp = pack_stamp(pid)
-    hit = _metad.get(pid)
-    if hit and hit[0] == stamp:
-        return hit[1]
+    # pack_stamp 要逐文件 stat（每帧一次，几十帧的包开销不小）：3 秒时间
+    # 窗内复用上次 stamp——热重载本来就是 ~3s 粒度（_check_reload 还另行
+    # 降频），语义不变；_metad 的结构与返回语义保持原样。
+    now = time.monotonic()
+    hit = _stamp_cache.get(pid)
+    if hit is not None and now < hit[0]:
+        stamp = hit[1]
+    else:
+        stamp = pack_stamp(pid)
+        _stamp_cache[pid] = (now + _STAMP_WINDOW, stamp)
+    md = _metad.get(pid)
+    if md and md[0] == stamp:
+        return md[1]
     data = _load_pack_meta(pid) or {}
     _metad[pid] = (stamp, data)
     return data

@@ -19,6 +19,7 @@ import os
 import random
 import sys
 import time
+import traceback
 
 from PySide6.QtCore import QPoint, Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QPainter, QRegion
@@ -38,6 +39,22 @@ from .anims import loop_seconds, meta as anim_meta
 from .behavior import Behavior
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+_ERR_LOG = os.path.join(ROOT, 'err.log')
+_ERR_LOG_MAX = 1 << 20       # 约 1MB：超过先清空再写，防日志无限膨胀
+
+
+def _log_err(note, exc):
+    """把时间戳 + traceback 追加写入项目根 err.log（记录失败本身不再抛）。"""
+    try:
+        if os.path.exists(_ERR_LOG) and os.path.getsize(_ERR_LOG) > _ERR_LOG_MAX:
+            open(_ERR_LOG, 'w').close()            # 超限：截断重写
+        with open(_ERR_LOG, 'a', encoding='utf-8') as f:
+            f.write(f'\n[{time.strftime("%Y-%m-%d %H:%M:%S")}] {note}\n')
+            traceback.print_exception(type(exc), exc, exc.__traceback__,
+                                      file=f)
+    except OSError:
+        pass
 
 # tk 版常量按 30fps"每帧"定义；Qt 主循环按实际 dt 换算成每秒
 _SPEED = C.WALK_SPEED * C.FPS          # 走路速度 px/s
@@ -383,6 +400,14 @@ class PetAppQt(QWidget):
 
     # ---------------- 主循环 ----------------
     def _tick(self):
+        """主循环兜底：任何异常记入 err.log 后继续（QTimer 自动续拍，
+        不兜底的话一帧异常就会把整个主循环带崩）。"""
+        try:
+            self._tick_body()
+        except Exception as exc:                  # noqa: BLE001
+            _log_err('Qt 主循环 _tick 异常', exc)
+
+    def _tick_body(self):
         now = time.monotonic()
         dt = min(now - self._last, 0.1)
         self._last = now

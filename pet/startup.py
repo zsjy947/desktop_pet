@@ -54,7 +54,9 @@ def enable(project_dir, python=None, override_dir=None):
                f'Set sh = CreateObject("WScript.Shell")\n'
                f'sh.CurrentDirectory = "{project_dir}"\n'
                f'sh.Run """{pythonw}"" main.py", 0, False\n')
-    with open(path, 'w', encoding='utf-8') as f:
+    # utf-8-sig（带 BOM）：wscript 对无 BOM 的 UTF-8 按 ANSI 解码，
+    # 路径含中文（如用户名）会启动失败；带 BOM 才按 UTF-8 解码
+    with open(path, 'w', encoding='utf-8-sig') as f:
         f.write(content)
     return path
 

@@ -8,7 +8,6 @@
 PNG 免抠图）→ 生成精灵帧 → 写入 custom_characters.json。宠物右键菜单
 重新打开时即可看到新角色（无需重启）。
 """
-import cgi
 import json
 import os
 import sys
@@ -74,6 +73,99 @@ PAGE = """<!DOCTYPE html>
 </script></body></html>"""
 
 
+class _Field:
+    """一个表单字段：普通字段只有 value（str），文件字段带 filename
+    与原始 bytes（data）。"""
+
+    __slots__ = ('value', 'filename', 'data')
+
+    def __init__(self, value=None, filename=None, data=None):
+        self.value = value
+        self.filename = filename
+        self.data = data
+
+
+def _text(form, key):
+    """普通字段的（第一个）字符串值，缺省 None。"""
+    fs = form.get(key)
+    return fs[0].value if fs else None
+
+
+def _texts(form, key):
+    """同名字段的全部字符串值（等价旧 cgi 的 form.getvalue 重名字段
+    返回 list），无该字段返回空列表。"""
+    return [f.value for f in form.get(key) or [] if f.value is not None]
+
+
+def _parse_multipart(headers, rfile):
+    """最小 multipart/form-data 解析（cgi.FieldStorage 在 Python 3.13
+    已随 cgi 模块移除，这里手写等价子集）。
+
+    返回 {name: [_Field, ...]}——同名字段可能多次出现（旧 cgi 的
+    form.getvalue 对重名字段返回 list），按出现顺序全部保留。
+    支持：Content-Type 里的 boundary（含引号形式）、每段头里的
+    content-disposition name/filename（引号形式）、文件字段保留 bytes、
+    普通字段按 UTF-8 解码。
+    """
+    ctype = headers.get('Content-Type') or ''
+    if not ctype.lower().startswith('multipart/form-data'):
+        return {}
+    boundary = None
+    for part in ctype.split(';'):
+        part = part.strip()
+        if part.lower().startswith('boundary='):
+            boundary = part.split('=', 1)[1].strip('"')
+            break
+    if not boundary:
+        return {}
+    try:
+        length = int(headers.get('Content-Length') or 0)
+    except ValueError:
+        length = 0
+    body = rfile.read(length) if length > 0 else b''
+
+    fields = {}
+    # 结构：preamble + 边界 + \r\n + 段头 + \r\n\r\n + 内容 + \r\n + 边界…
+    # 按边界切开后：首块是 preamble，以 '--' 开头的块是收尾，其余为各字段
+    for chunk in body.split(b'--' + boundary.encode('latin-1'))[1:]:
+        if chunk[:2] == b'--':
+            break
+        if chunk[:2] == b'\r\n':
+            chunk = chunk[2:]
+        head, sep, data = chunk.partition(b'\r\n\r\n')
+        if not sep:
+            continue
+        if data.endswith(b'\r\n'):
+            data = data[:-2]
+        name = filename = None
+        for line in head.decode('latin-1').splitlines():
+            if not line.lower().startswith('content-disposition:'):
+                continue
+            for seg in line.split(';')[1:]:
+                seg = seg.strip()
+                key, _, val = seg.partition('=')
+                val = val.strip('"')
+                if key.strip().lower() == 'name' and val:
+                    name = val
+                elif key.strip().lower() == 'filename':
+                    filename = val
+        if name is None:
+            continue
+        if filename is not None:             # 文件字段（可为空文件名）
+            # 浏览器的 filename 常直接放 UTF-8（RFC 5987 的 filename*
+            # 除外）：先按 latin-1 还原字节再试 UTF-8，失败保持原样
+            try:
+                filename = filename.encode('latin-1').decode('utf-8')
+            except (UnicodeDecodeError, UnicodeEncodeError):
+                pass
+            fields.setdefault(name, []).append(
+                _Field(filename=filename, data=data))
+        else:
+            fields.setdefault(name, []).append(
+                _Field(value=data.decode('utf-8', 'replace')))
+    return fields
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code, body, ctype):
         data = body.encode('utf-8')
@@ -98,33 +190,30 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, json.dumps({'ok': False, 'error': 'not found'}),
                        'application/json')
             return
+        tmp = None
         try:
-            form = cgi.FieldStorage(fp=self.rfile, headers=self.headers,
-                                    environ={'REQUEST_METHOD': 'POST'})
-            upload = form['image']
-            if not getattr(upload, 'file', None):
+            form = _parse_multipart(self.headers, self.rfile)
+            files = form.get('image') or []
+            upload = files[0] if files else None
+            if not upload or not upload.data:
                 raise ValueError('请选择图片')
             suffix = os.path.splitext(upload.filename or '')[1] or '.png'
             fd, tmp = tempfile.mkstemp(suffix=suffix)
             with os.fdopen(fd, 'wb') as out:
-                shutil_copy(upload.file, out)
+                out.write(upload.data)
 
             phrases = {}
             for key in ('talk', 'feed', 'pet', 'sleep', 'wake', 'drop',
                         'switch'):
-                raw = form.getvalue(key)
-                if raw is None:
-                    continue
-                values = raw if isinstance(raw, list) else [raw]
-                lines = [s.strip() for v in values
+                lines = [s.strip() for v in _texts(form, key)
                          for s in str(v).splitlines() if s.strip()]
                 if lines:
                     phrases[key] = lines
             from add_character import add_character
             preset = add_character(
-                tmp, (form.getvalue('id') or '').strip(),
-                (form.getvalue('name') or '').strip() or None,
-                form.getvalue('model') or 'u2net', phrases)
+                tmp, (_text(form, 'id') or '').strip(),
+                (_text(form, 'name') or '').strip() or None,
+                _text(form, 'model') or 'u2net', phrases)
             self._send(200, json.dumps(
                 {'ok': True, 'id': preset['id'], 'name': preset['name']},
                 ensure_ascii=False), 'application/json')
@@ -132,11 +221,12 @@ class Handler(BaseHTTPRequestHandler):
             self._send(400, json.dumps({'ok': False, 'error': str(e)},
                                        ensure_ascii=False),
                        'application/json')
-
-
-def shutil_copy(src, dst):
-    import shutil
-    shutil.copyfileobj(src, dst, 1024 * 1024)
+        finally:
+            if tmp is not None:
+                try:
+                    os.remove(tmp)    # 上传临时图用完即删（成功失败都清）
+                except OSError:
+                    pass
 
 
 def main():

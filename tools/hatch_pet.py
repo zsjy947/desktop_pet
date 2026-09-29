@@ -97,8 +97,6 @@ ROW_ACTIONS = {
 def gen_image(prompt, out_path):
     """z-image-turbo 异步生成一张图并下载到 out_path。"""
     import requests
-    import urllib3
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     key = _api_key()
     headers = {'Authorization': f'Bearer {key}',
@@ -107,7 +105,7 @@ def gen_image(prompt, out_path):
         _API + 'v1/images/generations',
         headers={**headers, 'X-ModelScope-Async-Mode': 'true'},
         data=json.dumps({'model': _MODEL, 'prompt': prompt}).encode('utf-8'),
-        verify=False, timeout=60)
+        timeout=60)
     r.raise_for_status()
     task_id = r.json()['task_id']
 
@@ -115,10 +113,9 @@ def gen_image(prompt, out_path):
         d = requests.get(
             _API + f'v1/tasks/{task_id}',
             headers={**headers, 'X-ModelScope-Task-Type': 'image_generation'},
-            verify=False, timeout=60).json()
+            timeout=60).json()
         if d['task_status'] == 'SUCCEED':
-            raw = requests.get(d['output_images'][0], verify=False,
-                               timeout=180).content
+            raw = requests.get(d['output_images'][0], timeout=180).content
             with open(out_path, 'wb') as f:
                 f.write(raw)
             return out_path

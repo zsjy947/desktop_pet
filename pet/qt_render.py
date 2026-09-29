@@ -407,9 +407,13 @@ class Renderer:
                 return
             entry = anims.states_of(anims.meta(self.char['photo']))[key]
             flip = bool(entry.get('flip_left')) and facing < 0
-            self._head.setdefault(key, [0, self._durs(key)[0]])
-            head = self._head[key]
             durs = self._durs(key)
+            if not durs or not (entry.get('frames') or []):
+                # 空帧/空时长状态（坏资产包）：跳过绘制，不取 [0] 崩播放器
+                self._view = None
+                return
+            self._head.setdefault(key, [0, durs[0]])
+            head = self._head[key]
             if state == 'sleep' and key == 'idle' \
                     and not anims.has_state(anims.meta(self.char['photo']),
                                             'sleep'):
@@ -442,7 +446,10 @@ class Renderer:
         ck = (pid, key, idx, flip)
         img = self._img.get(ck)
         if img is None:
-            name = anims.states_of(anims.meta(pid))[key]['frames'][idx]
+            names = anims.states_of(anims.meta(pid))[key].get('frames') or []
+            if not names:
+                return None         # 空帧状态：无图可画（advance 已挡，防御）
+            name = names[idx % len(names)]
             img = QImage(anims.frame_path(pid, name))
             if flip:
                 img = _flip_h(img)

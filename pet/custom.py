@@ -11,6 +11,7 @@ photo_sprites.has_assets 校验，帧缺失的角色不会进入菜单。
 import json
 import os
 import re
+import time
 
 from . import characters as core
 from . import photo_sprites
@@ -34,20 +35,33 @@ DEFAULT_PHRASES = {
 
 
 def load_custom():
-    """读取自定义角色列表；文件缺失或损坏时返回空列表。"""
+    """读取自定义角色列表；文件缺失返回空列表，损坏时保留现场再返回空列表。"""
     try:
         with open(CUSTOM_FILE, encoding='utf-8') as f:
             data = json.load(f)
-        if isinstance(data, list):
-            return [p for p in data if isinstance(p, dict) and p.get('id')]
-    except Exception:
-        pass
+    except OSError:
+        return []                     # 读不了（通常是不存在）：视为空表
+    except ValueError:
+        # JSON 损坏：改名保留现场（不能静默清掉用户数据），再返回空列表
+        bad = f'{CUSTOM_FILE}.bad-{time.strftime("%Y%m%d%H%M%S")}'
+        try:
+            os.replace(CUSTOM_FILE, bad)
+        except OSError:
+            pass
+        print(f'[custom] custom_characters.json 解析失败，'
+              f'原文件已保留为 {bad}')
+        return []
+    if isinstance(data, list):
+        return [p for p in data if isinstance(p, dict) and p.get('id')]
     return []
 
 
 def save_custom(presets):
-    with open(CUSTOM_FILE, 'w', encoding='utf-8') as f:
+    # 原子写：先写临时文件再整体替换，中途崩溃/断电不会留下半截 JSON
+    tmp = CUSTOM_FILE + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
         json.dump(presets, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, CUSTOM_FILE)
 
 
 def valid_id(char_id):
