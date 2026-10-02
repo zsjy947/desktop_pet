@@ -1,5 +1,31 @@
 # 桌面宠物 · 橘猫与小伙伴们 🐱
 
+> ## ⛔ 本项目已于 2026-10-02 正式停止维护
+>
+> 本分支（`hatch-pet`）是**人物线归档快照**（AI 生成图集桌宠 +
+> 照片精灵：芒果/二乃/莉莉艾/小光/露莎米奈等），以下正文仅作历史
+> 记录。项目最终形态在 **`pokemon` 分支**（tag `v1.0.0-final`）：
+> 5 只宝可梦（Pokémon Showdown 官方动画）+ PySide6 逐像素透明渲染层。
+>
+> **分支去向**：
+>
+> | 分支 | 内容 | 去向 |
+> | --- | --- | --- |
+> | `pokemon` | 宝可梦线（最终活跃线） | 封版 tag `v1.0.0-final` |
+> | `hatch-pet` | 本分支：人物线 AI 图集 + 照片精灵 | 归档快照 |
+> | `main` | Canvas 橘猫早期线 | 归档快照 |
+>
+> - **最值钱的部分已抽走**：绿幕生图 → 确定性抠底 → 图集/逐帧
+>   资产打包工艺链，见独立仓库
+>   [`deskpet-asset-pipeline`](../deskpet-asset-pipeline)
+>   （同账号同级仓库，角色无关、无 IP、MIT）——本分支的人物图集
+>   如需复活，用它即可重新生成。
+> - **踩坑沉淀两篇**（在 pokemon 分支）：
+>   [tk 键色透明窗口实录](../blob/pokemon/docs/transparent-window-tk-keycolor.md) ·
+>   [PySide6 逐像素透明窗口实录](../blob/pokemon/docs/transparent-window-qt-pyside6.md)
+> - 架构与全部踩坑记录见各分支的 [AGENTS.md](AGENTS.md)
+>   （pokemon 分支最完整）。
+
 一个用 **Python 标准库（tkinter）** 实现的桌面宠物，零第三方依赖。
 一只程序化画出来的橘猫在你的屏幕底边散步、打盹、卖萌；
 右键菜单里可以切换成多位小伙伴：NoobAI 本地生成的**图集桌宠**
