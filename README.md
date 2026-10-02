@@ -1,5 +1,30 @@
 # 桌面宠物 · 橘猫与小伙伴们 🐱
 
+> ## ⛔ 本项目已于 2026-10-02 正式停止维护
+>
+> 本分支（`main`）是**早期归档快照**（Canvas 程序化绘制橘猫 +
+> 参考图角色线），以下正文仅作历史记录。项目最终形态在
+> **`pokemon` 分支**（tag `v1.0.0-final`）：5 只宝可梦
+> （Pokémon Showdown 官方动画）+ PySide6 逐像素透明渲染层。
+>
+> **分支去向**：
+>
+> | 分支 | 内容 | 去向 |
+> | --- | --- | --- |
+> | `pokemon` | 宝可梦线（最终活跃线） | 封版 tag `v1.0.0-final` |
+> | `hatch-pet` | 人物线：AI 生成图集 + 照片精灵 | 归档快照 |
+> | `main` | 本分支：Canvas 橘猫早期线 | 归档快照 |
+>
+> - **最值钱的部分已抽走**：绿幕生图 → 确定性抠底 → 图集/逐帧
+>   资产打包工艺链，见独立仓库
+>   [`deskpet-asset-pipeline`](../deskpet-asset-pipeline)
+>   （同账号同级仓库，角色无关、无 IP、MIT）。
+> - **踩坑沉淀两篇**（在 pokemon 分支）：
+>   [tk 键色透明窗口实录](../blob/pokemon/docs/transparent-window-tk-keycolor.md) ·
+>   [PySide6 逐像素透明窗口实录](../blob/pokemon/docs/transparent-window-qt-pyside6.md)
+> - 架构与全部踩坑记录见各分支的 [AGENTS.md](AGENTS.md)
+>   （pokemon 分支最完整）。
+
 一个用 **Python 标准库（tkinter）** 实现的桌面宠物，零第三方依赖。
 一只程序化画出来的橘猫在你的屏幕底边散步、打盹、卖萌；
 还可以在右键菜单里切换成 6 位由 `reference/pictures` 参考图转化来的动漫角色——
